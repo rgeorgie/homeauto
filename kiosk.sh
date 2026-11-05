@@ -32,10 +32,16 @@ if [ -f "$PREFS_FILE" ]; then
   sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS_FILE" 2>/dev/null || true
 fi
 
+# HomeAuto server port from config.yaml (default 80)
+KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PORT="$(awk '/^server:/{f=1;next} f&&/^[^ #]/{f=0} f&&/port:/{print $2; exit}' "$KIOSK_DIR/config.yaml" 2>/dev/null)"
+PORT="${PORT:-80}"
+BASE_URL="http://127.0.0.1:${PORT}"
+
 # Wait for HomeAuto backend to be ready (up to 10s, fast poll)
-echo "Waiting for HomeAuto server at http://127.0.0.1:8080..."
+echo "Waiting for HomeAuto server at ${BASE_URL}..."
 for i in {1..20}; do
-  if curl -s --max-time 1 http://127.0.0.1:8080/api/status >/dev/null 2>&1; then
+  if curl -s --max-time 1 "${BASE_URL}/api/status" >/dev/null 2>&1; then
     echo "HomeAuto server is online!"
     break
   fi
@@ -73,4 +79,4 @@ exec $CHROMIUM_BIN \
   --enable-features=OverlayScrollbar,TouchEvents \
   --ozone-platform-hint=auto \
   --log-level=3 \
-  --app=http://127.0.0.1:8080
+  --app="${BASE_URL}"

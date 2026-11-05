@@ -18,6 +18,7 @@ class TuyaDeviceConfig(BaseModel):
     type: str = "switch" # switch, light, socket, sensor, climate
     category: str = "cz"
     room: str = "Default"
+    home: str = "" # Tuya home name (filled by cloud sync)
 
 class TuyaConfig(BaseModel):
     mode: str = "local" # local, cloud, both
@@ -73,7 +74,7 @@ class WeatherConfig(BaseModel):
 
 class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
-    port: int = 8080
+    port: int = 80
     debug: bool = False
 
 class AppConfig(BaseModel):

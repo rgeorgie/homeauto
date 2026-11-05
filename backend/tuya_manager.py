@@ -363,6 +363,7 @@ class TuyaManager:
                 "type": dev_conf.type,
                 "category": dev_conf.category,
                 "room": dev_conf.room,
+                "home": dev_conf.home,
                 "ip": dev_conf.ip,
                 "local_key": dev_conf.local_key,
                 "online": False,
@@ -597,6 +598,11 @@ class TuyaManager:
         state["_cloud_polled_at"] = now
 
         try:
+            # Cloud status returns last-known values even for offline devices, so check the real online flag first
+            info = self.cloud_api.get(f"/v1.0/devices/{dev_id}")
+            if info and info.get("success") and isinstance(info.get("result"), dict) and info["result"].get("online") is False:
+                state.update({"online": False, "source": "cloud", "error": "Offline in Tuya Cloud (device not connected)"})
+                return state
             res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/status")
             if not (res and res.get("success") and isinstance(res.get("result"), list)):
                 logger.debug(f"Cloud status for {dev_id} failed: {res}")
@@ -707,6 +713,43 @@ class TuyaManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _test)
 
+    def _fetch_home_room_map(self, uid: str) -> Dict[str, Dict[str, str]]:
+        """Maps device id -> {"home": name, "room": name} using the Tuya Cloud home/room APIs. Best effort."""
+        result: Dict[str, Dict[str, str]] = {}
+        if not self.cloud_api or not uid:
+            return result
+
+        def _get(path):
+            try:
+                res = self.cloud_api.get(path)
+                if res and res.get("success"):
+                    return res.get("result")
+                logger.info(f"Tuya Cloud {path} -> {res}")
+            except Exception as e:
+                logger.info(f"Tuya Cloud {path} error: {e}")
+            return None
+
+        homes = _get(f"/v1.0/users/{uid}/homes") or []
+        for h in homes if isinstance(homes, list) else []:
+            home_id, home_name = h.get("home_id"), h.get("name", "")
+            if not home_id:
+                continue
+            for dev in (_get(f"/v1.0/homes/{home_id}/devices") or []):
+                if isinstance(dev, dict) and dev.get("id"):
+                    result[dev["id"]] = {"home": home_name, "room": ""}
+            rooms = _get(f"/v1.0/homes/{home_id}/rooms") or {}
+            for r in (rooms.get("rooms", []) if isinstance(rooms, dict) else rooms):
+                room_id, room_name = r.get("room_id"), r.get("name", "")
+                if not room_id:
+                    continue
+                room_devs = _get(f"/v1.0/homes/{home_id}/rooms/{room_id}/devices") or []
+                for d in (room_devs.get("devices", []) if isinstance(room_devs, dict) else room_devs):
+                    dev_id = d.get("id") if isinstance(d, dict) else d
+                    if dev_id:
+                        result.setdefault(dev_id, {"home": home_name, "room": ""})["room"] = room_name
+        logger.info(f"Tuya Cloud home/room map: {len(result)} devices")
+        return result
+
     async def sync_all_cloud_keys(self) -> Dict[str, Any]:
         """Queries Tuya Cloud for each device to fetch and save local keys directly."""
         if not self.config.cloud.access_id or not self.config.cloud.access_secret:
@@ -789,9 +832,15 @@ class TuyaManager:
                                 "ip": d.get("ip", "")
                             }
 
+            home_room_map = self._fetch_home_room_map(uid)
+
             # Method 3: Direct per-device lookup via OpenAPI (/v1.0/devices/{id})
             updated_count = 0
             for dev in self.config.devices:
+                loc = home_room_map.get(dev.id)
+                if loc:
+                    dev.home = loc["home"] or dev.home
+                    dev.room = loc["room"] or dev.room
                 info = cloud_key_map.get(dev.id, {})
                 key = info.get("key")
                 name = info.get("name")
@@ -826,6 +875,7 @@ class TuyaManager:
                 "success": updated_count > 0 or total_found > 0,
                 "total_cloud_found": total_found,
                 "keys_updated": updated_count,
+                "homes_matched": len(home_room_map),
                 "api_errors": api_errors,
                 "devices": [d.model_dump() for d in self.config.devices]
             }

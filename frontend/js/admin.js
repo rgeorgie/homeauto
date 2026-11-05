@@ -323,7 +323,7 @@ function populateAdminFields(cfg) {
 
   // Server
   if (cfg.server) {
-    document.getElementById("server-port").value = cfg.server.port || 8080;
+    document.getElementById("server-port").value = cfg.server.port || 80;
     document.getElementById("server-host").value = cfg.server.host || "0.0.0.0";
   }
 }
@@ -445,7 +445,7 @@ async function saveFullConfig() {
   const payload = {
     server: {
       host: document.getElementById("server-host").value.trim() || "0.0.0.0",
-      port: parseInt(document.getElementById("server-port").value || "8080"),
+      port: parseInt(document.getElementById("server-port").value || "80"),
       debug: false
     },
     tuya: {

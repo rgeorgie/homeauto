@@ -26,6 +26,7 @@ config: AppConfig = load_config()
 tuya_mgr = TuyaManager(config.tuya)
 bt_mgr = BluetoothAudioManager(config.bluetooth_audio)
 kodi_mgr = KodiManager(config.kodi)
+kodi_mgr.own_port = config.server.port
 media_player = MediaPlayer(config.screensaver.youtube_audio)
 screensaver_mgr = ScreensaverManager(config.screensaver)
 
@@ -546,6 +547,7 @@ async def update_full_config(new_conf_data: Dict[str, Any] = Body(...)):
         tuya_mgr.reload_config(config.tuya)
         bt_mgr.reload_config(config.bluetooth_audio)
         kodi_mgr.reload_config(config.kodi)
+        kodi_mgr.own_port = config.server.port
         media_player.reload_config(config.screensaver.youtube_audio)
         screensaver_mgr.reload_config(config.screensaver)
         _cached_weather = {} # clear weather cache

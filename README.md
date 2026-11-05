@@ -85,7 +85,7 @@ Copy `config.example.yaml` to `config.yaml` and configure your devices:
 ```yaml
 server:
   host: "0.0.0.0"
-  port: 8080
+  port: 80
 
 # SmartLife (Tuya) Devices
 tuya:
@@ -111,7 +111,7 @@ bluetooth_audio:
 kodi:
   enabled: true
   host: "127.0.0.1"
-  port: 8088  # must differ from HomeAuto port 8080
+  port: 8080  # Kodi web server port (must differ from HomeAuto port 80)
   launch_command: "kodi-standalone"
 
 # Ambient Screensaver
@@ -145,7 +145,7 @@ source venv/bin/activate
 python -m backend.main
 ```
 
-Open your browser at: `http://localhost:8080` (or `http://<raspberry-pi-ip>:8080` from your phone/laptop).
+Open your browser at: `http://localhost` (or `http://<raspberry-pi-ip>` from your phone/laptop).
 
 ---
 

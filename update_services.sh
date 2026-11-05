@@ -6,6 +6,14 @@ USER_NAME="$(whoami)"
 
 echo "==> Configuring HomeAuto as user session service for '$USER_NAME'..."
 
+# 0. Allow non-root user services to bind port 80, and move an old 8080 config to port 80
+echo "==> Allowing user services to bind port 80..."
+echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee /etc/sysctl.d/99-homeauto-port80.conf >/dev/null
+sudo sysctl -q --system >/dev/null || true
+if [ -f "$CURRENT_DIR/config.yaml" ]; then
+  sed -i -E '/^server:/,/^[a-z]/ s/^( *port: *)8080( |$)/\180\2/' "$CURRENT_DIR/config.yaml"
+fi
+
 # 1. Stop and clean up old system-level services
 echo "==> Cleaning up system-level services..."
 sudo systemctl stop homeauto.service homeauto-kiosk.service 2>/dev/null || true

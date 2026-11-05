@@ -11,6 +11,7 @@ class KodiManager:
     def __init__(self, config: KodiConfig):
         self.config = config
         self.last_error = ""
+        self.own_port = 0  # HomeAuto's own HTTP port, set by main.py so Kodi is never pointed at ourselves
         self._update_url()
 
     def _update_url(self):
@@ -47,9 +48,11 @@ class KodiManager:
             return None
 
         # Never query the HomeAuto server itself (it also answers /jsonrpc with "pong")
-        if self.config.host in ["127.0.0.1", "localhost"] and self.config.port == 8080:
-            self.last_error = "Kodi port 8080 is HomeAuto's own port. Set the Kodi port in Settings (e.g. 8088)"
-            logger.warning(self.last_error)
+        if self.config.host in ["127.0.0.1", "localhost"] and self.own_port and self.config.port == self.own_port:
+            msg = f"Kodi port {self.config.port} is HomeAuto's own port. Set Kodi's web server port in Settings (e.g. 8080)"
+            if self.last_error != msg:  # log once, not on every 3s status poll
+                logger.warning(msg)
+            self.last_error = msg
             return None
 
         payload = {

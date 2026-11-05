@@ -268,6 +268,11 @@ function renderTuyaDevices(devices) {
   });
 }
 
+function deviceLocation(dev, fallbackRoom = 'Default') {
+  const room = escapeHtml(dev.room || fallbackRoom);
+  return dev.home ? `${escapeHtml(dev.home)} / ${room}` : room;
+}
+
 function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
   const isClimate = dev.type === "climate" || dev.type === "sensor" || ["wk", "wkf", "rs", "qn", "tc", "wkjsq", "wsdcg", "thp", "th01", "cg"].includes(dev.category) ||
@@ -308,7 +313,7 @@ function createDeviceCardHtml(dev) {
           <div class="card-header">
             <div>
               <div class="card-title">${escapeHtml(dev.name)} ${humidityBadge} ${batteryBadge}</div>
-              <div class="card-subtitle">${escapeHtml(dev.room || 'Default')} &bull; ${statusBadge}</div>
+              <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(251, 146, 60, 0.15);">🔥</div>
           </div>
@@ -357,7 +362,7 @@ function createDeviceCardHtml(dev) {
           <div class="card-header">
             <div>
               <div class="card-title">${escapeHtml(dev.name)}</div>
-              <div class="card-subtitle">${escapeHtml(dev.room || 'Pet Zone')} &bull; ${statusBadge}</div>
+              <div class="card-subtitle">${deviceLocation(dev, 'Pet Zone')} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(168, 85, 247, 0.15);">🐾</div>
           </div>
@@ -389,7 +394,7 @@ function createDeviceCardHtml(dev) {
         <div class="card-header">
           <div>
             <div class="card-title">${escapeHtml(dev.name)}</div>
-            <div class="card-subtitle">${escapeHtml(dev.room || 'Default')} &bull; ${statusBadge}</div>
+            <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
           </div>
           <div class="card-icon">${icon}</div>
         </div>
