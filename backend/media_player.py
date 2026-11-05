@@ -79,9 +79,14 @@ class MediaPlayer:
         """Plays YouTube stream via backend mpv player with Pulse/PipeWire audio routing."""
         self.stop()
         
-        info = await self.get_stream_url(url_or_preset)
-        direct_url = info.get("stream_url") if info else url_or_preset
-        self.current_title = title or (info.get("title") if info else url_or_preset)
+        # Check matching preset title if not provided
+        stream_title = title
+        if not stream_title:
+            for p in self.config.preset_streams:
+                if p.url == url_or_preset:
+                    stream_title = p.title
+                    break
+        self.current_title = stream_title or "Ambient Audio Stream"
         self.current_url = url_or_preset
         self.is_playing = True
 
@@ -95,23 +100,22 @@ class MediaPlayer:
                         except Exception:
                             pass
 
-                    # Check if a bluetooth sink exists in pactl and unmute
-                    bt_sink = None
+                    # Unmute sinks in pactl before playing
                     if shutil.which("pactl"):
                         try:
+                            subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], capture_output=True, env=env)
+                            subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{self.volume}%"], capture_output=True, env=env)
                             sinks_out = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=2, env=env)
                             for line in sinks_out.stdout.splitlines():
-                                if "bluez_output" in line or "bluez_sink" in line:
+                                if "bluez" in line:
                                     parts = line.split()
                                     if len(parts) >= 2:
                                         bt_sink = parts[1]
                                         subprocess.run(["pactl", "set-sink-mute", bt_sink, "0"], capture_output=True, env=env)
                                         subprocess.run(["pactl", "set-sink-volume", bt_sink, f"{self.volume}%"], capture_output=True, env=env)
-                                        break
                         except Exception:
                             pass
 
-                    target_play_url = direct_url or url_or_preset
                     log_file = open("/tmp/mpv.log", "w")
                     cmd = [
                         "mpv",
@@ -126,7 +130,7 @@ class MediaPlayer:
                         "--ytdl=yes",
                         "--ytdl-format=bestaudio/best",
                         "--gapless-audio=yes",
-                        target_play_url
+                        url_or_preset
                     ]
                     self._mpv_process = subprocess.Popen(
                         cmd,
