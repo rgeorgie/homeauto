@@ -31,8 +31,10 @@ class MediaPlayer:
     def _get_audio_env(self) -> Dict[str, str]:
         env = os.environ.copy()
         uid = os.getuid()
-        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
-        env.setdefault("PULSE_SERVER", f"unix:/run/user/{uid}/pulse/native")
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+        env["PULSE_SERVER"] = f"unix:/run/user/{uid}/pulse/native"
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
         return env
 
     def _send_ipc_command(self, command: List[Any]) -> bool:
@@ -93,11 +95,28 @@ class MediaPlayer:
                         except Exception:
                             pass
 
+                    # Check if a bluetooth sink exists in pactl and unmute
+                    bt_sink = None
+                    if shutil.which("pactl"):
+                        try:
+                            sinks_out = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=2, env=env)
+                            for line in sinks_out.stdout.splitlines():
+                                if "bluez_output" in line or "bluez_sink" in line:
+                                    parts = line.split()
+                                    if len(parts) >= 2:
+                                        bt_sink = parts[1]
+                                        subprocess.run(["pactl", "set-sink-mute", bt_sink, "0"], capture_output=True, env=env)
+                                        subprocess.run(["pactl", "set-sink-volume", bt_sink, f"{self.volume}%"], capture_output=True, env=env)
+                                        break
+                        except Exception:
+                            pass
+
                     target_play_url = direct_url or url_or_preset
                     cmd = [
                         "mpv",
                         "--no-video",
                         "--ao=pulse,alsa",
+                        f"--audio-device=pulse/{bt_sink}" if bt_sink else "--ao=pulse,alsa",
                         "--audio-client-name=HomeAuto",
                         f"--input-ipc-server={MPV_IPC_SOCK}",
                         f"--volume={self.volume}",

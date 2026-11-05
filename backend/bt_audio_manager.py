@@ -23,8 +23,10 @@ class BluetoothAudioManager:
     def _get_audio_env(self) -> Dict[str, str]:
         env = os.environ.copy()
         uid = os.getuid()
-        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
-        env.setdefault("PULSE_SERVER", f"unix:/run/user/{uid}/pulse/native")
+        env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+        env["PULSE_SERVER"] = f"unix:/run/user/{uid}/pulse/native"
+        if "DBUS_SESSION_BUS_ADDRESS" not in env:
+            env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
         return env
 
     def start_background_service(self):
@@ -219,7 +221,7 @@ class BluetoothAudioManager:
         return success
 
     async def switch_to_bluetooth_sink(self, mac: str) -> bool:
-        """Finds the Bluetooth audio sink and sets it as system default, migrating active streams."""
+        """Finds the Bluetooth audio sink and sets it as system default, migrating active streams and unmuting."""
         formatted_mac = mac.replace(":", "_").upper()
         formatted_mac_lower = mac.replace(":", "_").lower()
 
@@ -228,6 +230,13 @@ class BluetoothAudioManager:
             try:
                 if not shutil.which("pactl"):
                     return False
+
+                # 1. Ensure high-quality A2DP profile on Bluetooth card
+                for card_candidate in [f"bluez_card.{formatted_mac}", f"bluez_card.{formatted_mac_lower}"]:
+                    subprocess.run(["pactl", "set-card-profile", card_candidate, "a2dp-sink"], capture_output=True, env=env)
+                    subprocess.run(["pactl", "set-card-profile", card_candidate, "a2dp_sink"], capture_output=True, env=env)
+
+                # 2. Find target Bluetooth sink
                 res = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=3, env=env)
                 target_sink = None
                 for line in res.stdout.splitlines():
@@ -239,11 +248,13 @@ class BluetoothAudioManager:
                             break
 
                 if target_sink:
-                    # 1. Set as default sink
-                    subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
+                    self.active_sink_name = target_sink
+                    # Unmute and set volume
+                    subprocess.run(["pactl", "set-sink-mute", target_sink, "0"], capture_output=True, env=env)
                     subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
+                    subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
                     
-                    # 2. Migrate any currently playing streams (e.g. mpv, youtube audio)
+                    # 3. Migrate any currently playing streams (e.g. mpv, youtube audio)
                     inputs_res = subprocess.run(["pactl", "list", "short", "sink-inputs"], capture_output=True, text=True, timeout=3, env=env)
                     for in_line in inputs_res.stdout.splitlines():
                         in_parts = in_line.split()
@@ -251,7 +262,7 @@ class BluetoothAudioManager:
                             input_idx = in_parts[0]
                             subprocess.run(["pactl", "move-sink-input", input_idx, target_sink], capture_output=True, env=env)
 
-                    logger.info(f"Successfully switched default audio sink to Bluetooth: {target_sink}")
+                    logger.info(f"Successfully routed default audio sink to Bluetooth: {target_sink}")
                     return True
             except Exception as e:
                 logger.debug(f"Error switching audio sink: {e}")
@@ -264,16 +275,38 @@ class BluetoothAudioManager:
         """Plays a pleasant 440Hz test audio chime across active speaker/soundbar."""
         def _play():
             env = self._get_audio_env()
-            # 1. Try mpv sine wave synthesizer
+            target_sink = self.active_sink_name or "bluez_sink"
+            
+            # Find exact sink name if available
+            try:
+                res = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=2, env=env)
+                for line in res.stdout.splitlines():
+                    if "bluez" in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            target_sink = parts[1]
+                            break
+            except Exception:
+                pass
+
+            # Unmute sink first
+            try:
+                subprocess.run(["pactl", "set-sink-mute", target_sink, "0"], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
+            except Exception:
+                pass
+
+            # 1. Try mpv sine wave synthesizer targeted directly to the sink
             if shutil.which("mpv"):
                 try:
                     cmd = [
                         "mpv",
                         "--no-video",
                         "--ao=pulse,alsa",
+                        f"--audio-device=pulse/{target_sink}" if "bluez" in target_sink else "--ao=pulse,alsa",
                         f"--volume={self.volume}",
-                        "--length=1.5",
-                        "lavfi://[sine=frequency=440:duration=1.5]"
+                        "--length=2.0",
+                        "lavfi://[sine=frequency=440:duration=2.0]"
                     ]
                     subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     return True
@@ -281,6 +314,13 @@ class BluetoothAudioManager:
                     pass
 
             # 2. Try paplay or speaker-test
+            try:
+                cmd = ["paplay", f"--device={target_sink}", "/usr/share/sounds/alsa/Front_Center.wav"]
+                subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                pass
+
             try:
                 cmd = ["speaker-test", "-t", "sine", "-f", "440", "-l", "1", "-p", "1"]
                 subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
