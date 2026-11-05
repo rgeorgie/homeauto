@@ -40,6 +40,12 @@ class MediaPlayer:
         cookie = os.path.join(home, ".config", "pulse", "cookie")
         if os.path.exists(cookie):
             env["PULSE_COOKIE"] = cookie
+        
+        # Ensure virtualenv bin (with yt-dlp) is at head of PATH
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        venv_bin = os.path.join(project_root, "venv", "bin")
+        if os.path.exists(venv_bin):
+            env["PATH"] = f"{venv_bin}:{env.get('PATH', '')}"
         return env
 
     def _send_ipc_command(self, command: List[Any]) -> bool:
@@ -122,9 +128,14 @@ class MediaPlayer:
                             pass
 
                     log_file = open("/tmp/mpv.log", "w")
-                    play_url = url_or_preset
+                    play_url = url_or_preset.strip()
                     if not play_url.startswith("http://") and not play_url.startswith("https://") and not play_url.startswith("ytdl://") and not os.path.exists(play_url):
                         play_url = f"ytdl://ytsearch:{play_url}"
+
+                    # Locate yt-dlp binary
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                    venv_ytdl = os.path.join(project_root, "venv", "bin", "yt-dlp")
+                    ytdl_bin = venv_ytdl if os.path.exists(venv_ytdl) else (shutil.which("yt-dlp") or shutil.which("youtube-dl"))
 
                     cmd = [
                         "mpv",
@@ -137,10 +148,11 @@ class MediaPlayer:
                         "--reconnect=yes",
                         "--reconnect-stream-max-retries=10",
                         "--ytdl=yes",
-                        "--ytdl-format=bestaudio/best",
-                        "--gapless-audio=yes",
-                        play_url
+                        "--ytdl-format=bestaudio/best"
                     ]
+                    if ytdl_bin:
+                        cmd.append(f"--script-opts=ytdl_hook-ytdl_path={ytdl_bin}")
+                    cmd.append(play_url)
                     self._mpv_process = subprocess.Popen(
                         cmd,
                         env=env,
