@@ -24,15 +24,15 @@ function initKodiController() {
   }
 
   if (playPauseBtn) {
-    playPauseBtn.addEventListener("click", () => fetch("/api/kodi/play_pause", { method: "POST" }));
+    playPauseBtn.addEventListener("click", () => kodiPost("/api/kodi/play_pause"));
   }
 
   if (stopBtn) {
-    stopBtn.addEventListener("click", () => fetch("/api/kodi/stop", { method: "POST" }));
+    stopBtn.addEventListener("click", () => kodiPost("/api/kodi/stop"));
   }
 
-  // D-Pad Remote buttons
-  const dpadButtons = document.querySelectorAll(".dpad-btn[data-action]");
+  // D-Pad + Back/Home/Menu remote buttons
+  const dpadButtons = document.querySelectorAll("#view-kodi [data-action]");
   dpadButtons.forEach(btn => {
     btn.addEventListener("click", () => {
       const action = btn.dataset.action;
@@ -41,16 +41,27 @@ function initKodiController() {
   });
 }
 
-async function sendKodiInput(action) {
+async function kodiPost(url, body) {
   try {
-    await fetch("/api/kodi/input", {
+    const res = await fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action })
+      body: JSON.stringify(body || {})
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status === "failed") {
+      showToast(`Kodi: ${data.error || data.detail || "command failed"}`, 5000);
+      return false;
+    }
+    return true;
   } catch (e) {
-    console.debug("Kodi input error:", e);
+    showToast("Kodi: cannot reach HomeAuto server", 4000);
+    return false;
   }
+}
+
+function sendKodiInput(action) {
+  return kodiPost("/api/kodi/input", { action });
 }
 
 function renderKodiStatus(kodi) {

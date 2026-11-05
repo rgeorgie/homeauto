@@ -10,6 +10,7 @@ logger = logging.getLogger("HomeAuto.Kodi")
 class KodiManager:
     def __init__(self, config: KodiConfig):
         self.config = config
+        self.last_error = ""
         self._update_url()
 
     def _update_url(self):
@@ -42,11 +43,13 @@ class KodiManager:
     async def send_rpc(self, method: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Sends a JSON-RPC request to Kodi."""
         if not self.config.enabled:
+            self.last_error = "Kodi integration is disabled in Settings"
             return None
 
         # Never query the HomeAuto server itself (it also answers /jsonrpc with "pong")
         if self.config.host in ["127.0.0.1", "localhost"] and self.config.port == 8080:
-            logger.warning("Kodi port 8080 conflicts with HomeAuto's own port. Set kodi.port to Kodi's web server port (e.g. 8088).")
+            self.last_error = "Kodi port 8080 is HomeAuto's own port. Set the Kodi port in Settings (e.g. 8088)"
+            logger.warning(self.last_error)
             return None
 
         payload = {
@@ -62,8 +65,18 @@ class KodiManager:
                 res = requests.post(self.rpc_url, json=payload, auth=self.auth, timeout=1.5)
                 if res.status_code == 200:
                     data = res.json()
+                    if "error" in data:
+                        self.last_error = f"Kodi rejected {method}: {data['error'].get('message', data['error'])}"
+                        return None
+                    # HomeAuto's own /jsonrpc catch-all answers "pong" to everything; real Kodi never does for these methods
+                    if data.get("result") == "pong" and method != "JSONRPC.Ping":
+                        self.last_error = f"{self.rpc_url} is HomeAuto itself, not Kodi. Fix the Kodi host/port in Settings"
+                        return None
+                    self.last_error = ""
                     return data.get("result")
+                self.last_error = f"Kodi HTTP {res.status_code} at {self.rpc_url} (check username/password)"
             except Exception as e:
+                self.last_error = f"Cannot reach Kodi at {self.rpc_url}: {e.__class__.__name__}"
                 logger.debug(f"Kodi JSON-RPC request error ({method}): {e}")
             return None
 

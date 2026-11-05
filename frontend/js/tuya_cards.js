@@ -286,7 +286,7 @@ function createDeviceCardHtml(dev) {
     if (dev.error && dev.error.includes("Local key")) {
       statusBadge = `<span style="color: var(--accent-amber); font-size: 12px;">⚠️ Key Required</span>`;
     } else {
-      statusBadge = `<span style="color: var(--text-muted); font-size: 12px;">○ Offline</span>`;
+      statusBadge = `<span style="color: var(--text-muted); font-size: 12px;" title="${escapeHtml(dev.error || '')}">○ Offline${dev.error ? ' (' + escapeHtml(String(dev.error).slice(0, 40)) + ')' : ''}</span>`;
     }
   }
 

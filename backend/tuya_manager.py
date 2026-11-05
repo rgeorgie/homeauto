@@ -1,3 +1,5 @@
+import re
+import time
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
@@ -13,39 +15,60 @@ from backend.config import TuyaConfig, TuyaDeviceConfig
 
 logger = logging.getLogger("HomeAuto.Tuya")
 
+# Min seconds between Tuya Cloud status queries per device (protects the cloud API quota)
+CLOUD_POLL_INTERVAL_SECONDS = 60
+
 def resolve_tuya_device_type(category: str = "", product_name: str = "", name: str = "") -> str:
-    """Accurately resolves device type based on Tuya Category code and names."""
+    """Resolves device type from the Tuya category code (authoritative) and then product/device names."""
     cat = (category or "").lower().strip()
-    pname = (product_name or "").lower().strip()
-    dname = (name or "").lower().strip()
-    combined = f"{cat} {pname} {dname}"
+    words = re.findall(r"[a-z0-9]+", f"{product_name or ''} {name or ''}".lower())
 
-    # 1. Pet Feeder / Pet Water Fountain / Cat Care / Food Dispenser
-    if cat in ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"] or any(k in combined for k in ["pet", "feeder", "cat", "dog", "fountain", "kibble", "food", "feed", "meal", "treat", "portion", "dispenser", "waterer", "bowl", "snack", "litter"]):
+    def has(keys) -> bool:
+        # Short keys must match a whole word (so "cat" does not match "indicator"); longer keys match word prefixes.
+        for k in keys:
+            for w in words:
+                if (len(k) <= 3 and w in (k, k + "s")) or (len(k) > 3 and w.startswith(k)):
+                    return True
+        return False
+
+    pet_cats = ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"]
+    climate_cats = ["wk", "wkf", "rs", "qn", "tc", "wkjsq"]
+    light_cats = ["dj", "dd", "dc", "xdd", "tyndj", "sbd", "tgq"]
+    curtain_cats = ["cl", "clkg", "ckmkq"]
+    sensor_cats = ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir", "hjjcy", "zd", "sgbj", "ldcg", "wnykq", "co2bj", "pm25", "jwbj"]
+    socket_cats = ["cz", "pc"]
+    fan_cats = ["fs", "fsd", "jsq"]
+
+    # Category code from Tuya Cloud is authoritative when present
+    if cat in pet_cats:
         return "pet_feeder"
-
-    # 2. Climate / Thermostats / Heaters / Radiator TRVs
-    if cat in ["wk", "wkf", "rs", "qn", "tc", "wkjsq"] or any(k in combined for k in ["thermostat", "heat", "heater", "climate", "trv", "valve", "underfloor", "radiator", "boiler"]):
+    if cat in climate_cats:
         return "climate"
-
-    # 3. Lights / Bulbs / Strips / Lamps
-    if cat in ["dj", "dd", "dc", "xdd", "tyndj", "sbd", "tgq"] or any(k in combined for k in ["light", "bulb", "strip", "lamp", "led", "ceiling", "spotlight"]):
+    if cat in light_cats:
         return "light"
-
-    # 4. Curtains / Blinds / Shutters / Garage
-    if cat in ["cl", "clkg", "ckmkq"] or any(k in combined for k in ["curtain", "blind", "shutter", "roller", "garage"]):
+    if cat in curtain_cats:
         return "curtain"
-
-    # 5. Sensors
-    if cat in ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir"] or any(k in combined for k in ["sensor", "detector", "motion", "door", "window", "leak", "smoke"]):
+    if cat in sensor_cats:
         return "sensor"
-
-    # 6. Sockets / Plugs / Power Strips
-    if cat in ["cz", "pc"] or any(k in combined for k in ["socket", "plug", "outlet", "power strip"]):
+    if cat in socket_cats:
         return "socket"
+    if cat in fan_cats:
+        return "fan"
 
-    # 7. Fans / Air Purifiers / Humidifiers
-    if cat in ["fs", "fsd", "jsq"] or any(k in combined for k in ["fan", "humidifier", "purifier"]):
+    # Fall back to names when category is unknown
+    if has(["pet", "feeder", "feed", "cat", "dog", "fountain", "kibble", "meal", "treat", "portion", "dispenser", "waterer", "snack", "litter"]):
+        return "pet_feeder"
+    if has(["thermostat", "heat", "climate", "trv", "valve", "underfloor", "radiator", "boiler"]):
+        return "climate"
+    if has(["sensor", "detector", "motion", "leak", "smoke"]):
+        return "sensor"
+    if has(["light", "bulb", "strip", "lamp", "led", "ceiling", "spotlight"]):
+        return "light"
+    if has(["curtain", "blind", "shutter", "roller", "garage"]):
+        return "curtain"
+    if has(["socket", "plug", "outlet"]):
+        return "socket"
+    if has(["fan", "humidifier", "purifier"]):
         return "fan"
 
     return "switch"
@@ -299,7 +322,7 @@ class TuyaManager:
 
         while self._running:
             try:
-                dev_ids = list(self.local_devices.keys())
+                dev_ids = list(self.device_states.keys()) if self.cloud_api else list(self.local_devices.keys())
                 if dev_ids:
                     tasks = [_poll_one(did) for did in dev_ids]
                     await asyncio.gather(*tasks, return_exceptions=True)
@@ -338,6 +361,7 @@ class TuyaManager:
                 "id": dev_conf.id,
                 "name": dev_conf.name,
                 "type": dev_conf.type,
+                "category": dev_conf.category,
                 "room": dev_conf.room,
                 "ip": dev_conf.ip,
                 "local_key": dev_conf.local_key,
@@ -364,8 +388,8 @@ class TuyaManager:
                         version=dev_conf.version
                     )
                 device.set_socketPersistent(False)
-                device.set_socketTimeout(1.0)
-                device.set_socketRetryLimit(1)
+                device.set_socketTimeout(3.0)
+                device.set_socketRetryLimit(2)
                 self.local_devices[dev_conf.id] = device
                 logger.info(f"Registered local Tuya device: {dev_conf.name} ({dev_conf.id})")
             else:
@@ -502,57 +526,122 @@ class TuyaManager:
 
     def _sync_poll_device(self, dev_id: str) -> Dict[str, Any]:
         dev = self.local_devices.get(dev_id)
-        if not dev:
-            return self.device_states.get(dev_id, {})
-        
-        try:
-            status = dev.status()
-            if status and "dps" in status:
-                dps = status["dps"]
-                is_on = False
-                # Standard Tuya switch/light DPS is usually '1' or '20'
-                if '1' in dps:
-                    is_on = bool(dps['1'])
-                elif '20' in dps:
-                    is_on = bool(dps['20'])
-                
-                brightness = 100
-                if '2' in dps and isinstance(dps['2'], int) and dev_id in self.device_states and self.device_states[dev_id].get("type") in ["light", "bulb"]:
-                    brightness = int(dps['2'])
-                elif '22' in dps and isinstance(dps['22'], int):
-                    brightness = int(dps['22'])
+        local_error = "Local key required" if not dev else None
 
-                # Thermostat / Heating / Climate DPS extraction
-                dev_type = self.device_states.get(dev_id, {}).get("type", "climate")
-                climate_data = extract_tuya_climate_data(dps, dev_type=dev_type)
+        if dev:
+            try:
+                status = dev.status()
+                if status and "dps" in status:
+                    return self._apply_dps(dev_id, status["dps"], "local")
+                local_error = (status or {}).get("Error") or "No response"
+            except Exception as e:
+                local_error = str(e)
 
-                state = self.device_states.get(dev_id, {})
-                state.update({
-                    "online": True,
-                    "is_on": is_on,
-                    "brightness": brightness,
-                    "current_temperature": climate_data["current_temperature"] if climate_data["current_temperature"] is not None else state.get("current_temperature"),
-                    "target_temperature": climate_data["target_temperature"] if climate_data["target_temperature"] is not None else state.get("target_temperature"),
-                    "target_dps_key": climate_data["target_dps_key"] or state.get("target_dps_key"),
-                    "target_scale": climate_data["target_scale"] or state.get("target_scale", 10),
-                    "humidity": climate_data["humidity"] if climate_data["humidity"] is not None else state.get("humidity"),
-                    "battery": climate_data["battery"] if climate_data["battery"] is not None else state.get("battery"),
-                    "mode": climate_data["mode"] or state.get("mode", "manual"),
-                    "dps": dps,
-                    "error": None
-                })
-                self.device_states[dev_id] = state
-                return state
-            else:
-                if dev_id in self.device_states:
-                    self.device_states[dev_id]["online"] = False
-                    self.device_states[dev_id]["error"] = status.get("Error", "No response")
-        except Exception as e:
-            if dev_id in self.device_states:
-                self.device_states[dev_id]["online"] = False
-                self.device_states[dev_id]["error"] = str(e)
-        
+        # Local access failed or unavailable: fall back to Tuya Cloud (rate limited to protect API quota)
+        cloud_state = self._poll_cloud_device(dev_id)
+        if cloud_state:
+            return cloud_state
+
+        if dev_id in self.device_states:
+            st = self.device_states[dev_id]
+            if st.get("online", False) or st.get("error") != local_error:
+                logger.warning(f"Tuya device '{st.get('name')}' ({dev_id}) at {st.get('ip')} is offline: {local_error}")
+            st["online"] = False
+            st["error"] = local_error
         return self.device_states.get(dev_id, {})
+
+    def _apply_dps(self, dev_id: str, dps: Dict[str, Any], source: str) -> Dict[str, Any]:
+        is_on = False
+        # Standard Tuya switch/light DPS is usually '1' or '20'
+        if '1' in dps:
+            is_on = bool(dps['1'])
+        elif '20' in dps:
+            is_on = bool(dps['20'])
+
+        brightness = 100
+        if '2' in dps and isinstance(dps['2'], int) and dev_id in self.device_states and self.device_states[dev_id].get("type") in ["light", "bulb"]:
+            brightness = int(dps['2'])
+        elif '22' in dps and isinstance(dps['22'], int):
+            brightness = int(dps['22'])
+
+        # Thermostat / Heating / Climate DPS extraction
+        state = self.device_states.get(dev_id, {})
+        climate_data = extract_tuya_climate_data(dps, dev_type=state.get("type", "climate"))
+
+        state.update({
+            "online": True,
+            "is_on": is_on,
+            "brightness": brightness,
+            "current_temperature": climate_data["current_temperature"] if climate_data["current_temperature"] is not None else state.get("current_temperature"),
+            "target_temperature": climate_data["target_temperature"] if climate_data["target_temperature"] is not None else state.get("target_temperature"),
+            "target_dps_key": climate_data["target_dps_key"] or state.get("target_dps_key"),
+            "target_scale": climate_data["target_scale"] or state.get("target_scale", 10),
+            "humidity": climate_data["humidity"] if climate_data["humidity"] is not None else state.get("humidity"),
+            "battery": climate_data["battery"] if climate_data["battery"] is not None else state.get("battery"),
+            "mode": climate_data["mode"] or state.get("mode", "manual"),
+            "dps": dps,
+            "source": source,
+            "error": None
+        })
+        self.device_states[dev_id] = state
+        return state
+
+    def _poll_cloud_device(self, dev_id: str) -> Optional[Dict[str, Any]]:
+        """Reads device status from Tuya Cloud (code/value pairs). Returns None if unavailable."""
+        if not self.cloud_api or dev_id not in self.device_states:
+            return None
+        state = self.device_states[dev_id]
+        now = time.time()
+        if now - state.get("_cloud_polled_at", 0) < CLOUD_POLL_INTERVAL_SECONDS:
+            return state if state.get("source") == "cloud" and state.get("online") else None
+        state["_cloud_polled_at"] = now
+
+        try:
+            res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/status")
+            if not (res and res.get("success") and isinstance(res.get("result"), list)):
+                logger.debug(f"Cloud status for {dev_id} failed: {res}")
+                return None
+            codes = {i.get("code"): i.get("value") for i in res["result"] if isinstance(i, dict)}
+        except Exception as e:
+            logger.debug(f"Cloud status error for {dev_id}: {e}")
+            return None
+
+        def first(*names):
+            for n in names:
+                v = codes.get(n)
+                if v is not None and not isinstance(v, bool):
+                    return v
+            return None
+
+        def temp(v):
+            if not isinstance(v, (int, float)):
+                return None
+            v = float(v)
+            return round(v / 100.0 if v > 500 else v / 10.0 if v > 45 else v, 1)
+
+        is_on = False
+        for n in ("switch", "switch_1", "Power", "power"):
+            if isinstance(codes.get(n), bool):
+                is_on = codes[n]
+                break
+
+        cur = temp(first("temp_current", "va_temperature", "temp_indoor"))
+        tgt = temp(first("temp_set", "set_temp", "target_temp"))
+        hum = first("humidity_value", "va_humidity", "humidity_current")
+        bat = first("battery_percentage", "battery")
+
+        state.update({
+            "online": True,
+            "is_on": is_on,
+            "current_temperature": cur if cur is not None else state.get("current_temperature"),
+            "target_temperature": tgt if tgt is not None else state.get("target_temperature"),
+            "humidity": int(hum) if isinstance(hum, (int, float)) else state.get("humidity"),
+            "battery": int(bat) if isinstance(bat, (int, float)) else state.get("battery"),
+            "source": "cloud",
+            "cloud_codes": codes,
+            "error": None
+        })
+        return state
 
     async def get_all_states(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Returns current device states (cached in-memory for instant response, or forced refresh)."""
@@ -696,6 +785,7 @@ class TuyaManager:
                                 "key": key,
                                 "name": name,
                                 "category": d.get("category", ""),
+                                "product_name": d.get("product_name", ""),
                                 "ip": d.get("ip", "")
                             }
 
@@ -705,18 +795,25 @@ class TuyaManager:
                 info = cloud_key_map.get(dev.id, {})
                 key = info.get("key")
                 name = info.get("name")
+                category = info.get("category", "")
+                product_name = info.get("product_name", "")
 
-                if not key and self.cloud_api:
+                if (not key or not category) and self.cloud_api:
                     try:
                         d_res = self.cloud_api.get(f"/v1.0/devices/{dev.id}")
                         if d_res and d_res.get("success") and "result" in d_res:
                             r = d_res["result"]
                             key = r.get("local_key") or r.get("key")
                             name = r.get("name") or dev.name
+                            category = category or r.get("category", "")
+                            product_name = product_name or r.get("product_name", "")
                             logger.info(f"Fetched key directly for {dev.id} ({name}): key_found={bool(key)}")
                     except Exception as err:
                         logger.debug(f"Direct device {dev.id} lookup error: {err}")
 
+                if category:
+                    dev.category = category
+                    dev.type = resolve_tuya_device_type(category, product_name, name or dev.name)
                 if key:
                     dev.local_key = key
                     if name:

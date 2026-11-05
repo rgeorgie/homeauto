@@ -243,6 +243,9 @@ async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
                         existing.ip = dev_raw.get("ip")
                     if dev_raw.get("local_key"):
                         existing.local_key = dev_raw.get("local_key")
+                    if dev_raw.get("category"):
+                        existing.category = dev_raw.get("category")
+                        existing.type = dev_raw.get("type") or existing.type
                     config.tuya.devices[idx] = existing
         else:
             new_dev = TuyaDeviceConfig(
@@ -378,21 +381,23 @@ async def test_bluetooth_sound():
 async def get_kodi_status():
     return await kodi_mgr.get_status()
 
+def _kodi_result(success: bool):
+    if success:
+        return {"status": "ok"}
+    return {"status": "failed", "error": kodi_mgr.last_error or "Kodi did not respond (is anything playing / is Kodi running?)"}
+
 @app.post("/api/kodi/play_pause")
 async def kodi_play_pause():
-    success = await kodi_mgr.play_pause()
-    return {"status": "ok" if success else "failed"}
+    return _kodi_result(await kodi_mgr.play_pause())
 
 @app.post("/api/kodi/stop")
 async def kodi_stop():
-    success = await kodi_mgr.stop()
-    return {"status": "ok" if success else "failed"}
+    return _kodi_result(await kodi_mgr.stop())
 
 @app.post("/api/kodi/input")
 async def kodi_input(payload: Dict[str, str] = Body(...)):
     action = payload.get("action", "")
-    success = await kodi_mgr.send_input(action)
-    return {"status": "ok" if success else "failed"}
+    return _kodi_result(await kodi_mgr.send_input(action))
 
 @app.post("/api/kodi/launch")
 async def kodi_launch():
