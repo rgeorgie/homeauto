@@ -362,7 +362,13 @@ class TuyaManager:
                 try:
                     res = c.cloudrequest(f"/v1.0/users/{uid}/devices")
                     if res and res.get("success") and "result" in res:
-                        cloud_devices_list = res.get("result", [])
+                        r = res.get("result")
+                        if isinstance(r, list):
+                            cloud_devices_list = r
+                        elif isinstance(r, dict) and "devices" in r:
+                            cloud_devices_list = r["devices"]
+                        elif isinstance(r, dict) and "list" in r:
+                            cloud_devices_list = r["list"]
                     elif res and not res.get("success"):
                         api_errors.append(f"UID query error: {res.get('msg', res.get('code'))}")
                 except Exception as e:
@@ -383,12 +389,16 @@ class TuyaManager:
                     if uid:
                         o_res = self.cloud_api.get(f"/v1.0/users/{uid}/devices")
                         if o_res and o_res.get("success"):
-                            cloud_devices_list = o_res.get("result", [])
+                            r = o_res.get("result")
+                            if isinstance(r, list):
+                                cloud_devices_list = r
+                            elif isinstance(r, dict):
+                                cloud_devices_list = r.get("devices", r.get("list", []))
                     if not cloud_devices_list:
                         o_res = self.cloud_api.get("/v1.0/devices")
                         if o_res and o_res.get("success"):
                             res_data = o_res.get("result", {})
-                            cloud_devices_list = res_data.get("devices", res_data) if isinstance(res_data, dict) else res_data
+                            cloud_devices_list = res_data.get("devices", res_data.get("list", [])) if isinstance(res_data, dict) else res_data
                 except Exception as e:
                     api_errors.append(f"OpenAPI failed: {e}")
 
