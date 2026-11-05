@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>HomeAuto Hub</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+
+  <!-- Top App Header -->
+  <header class="app-header">
+    <div class="brand-section">
+      <div class="brand-icon">🏡</div>
+      <div>
+        <div class="brand-title">HomeAuto Hub</div>
+        <div style="font-size: 12px; color: var(--text-muted);">Raspberry Pi &bull; 15" Touchscreen</div>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div class="status-pill">
+        <div id="ws-status-dot" class="status-dot"></div>
+        <span id="ws-status-text">Online</span>
+      </div>
+
+      <div class="status-pill">
+        <span>🌤️</span>
+        <span class="live-weather-temp">--°C</span>
+      </div>
+
+      <div class="clock-display">
+        <div id="header-time" class="time-text">12:00</div>
+        <div id="header-date" class="date-text">Mon, Jan 1</div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation Bar -->
+  <nav class="nav-bar">
+    <button class="nav-btn active" data-view="dashboard">
+      <span>🏠</span> Dashboard
+    </button>
+    <button class="nav-btn" data-view="devices">
+      <span>💡</span> SmartLife Devices
+    </button>
+    <button class="nav-btn" data-view="kodi">
+      <span>🎬</span> Kodi TV & Movies
+    </button>
+    <button class="nav-btn" data-view="audio">
+      <span>🎵</span> YouTube Audio
+    </button>
+    <button class="nav-btn" data-view="bluetooth">
+      <span>🔊</span> Surround Sound
+    </button>
+    <button class="nav-btn" data-view="system">
+      <span>⚙️</span> System
+    </button>
+  </nav>
+
+  <!-- Main View Container -->
+  <main class="main-container">
+
+    <!-- VIEW 1: DASHBOARD -->
+    <section id="view-dashboard" class="view-section active">
+      <!-- Quick Action Banner -->
+      <div class="action-banner" style="margin-bottom: 24px;">
+        <div>
+          <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 4px;">Welcome Home</h2>
+          <p style="color: rgba(255,255,255,0.8); font-size: 14px;" id="kodi-banner-title">Kodi Ready &bull; Surround Sound</p>
+        </div>
+        <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+          <button class="action-btn kodi-btn" onclick="switchView('kodi')">
+            🎬 Open Kodi Remote
+          </button>
+          <button class="action-btn screensaver-btn" id="btn-trigger-screensaver">
+            🖼️ Start Screensaver
+          </button>
+        </div>
+      </div>
+
+      <!-- Quick Cards Grid -->
+      <h3 style="margin-bottom: 16px; font-size: 18px; color: var(--text-muted);">Quick Device Controls</h3>
+      <div class="dashboard-grid" id="quick-devices-grid">
+        <!-- Rendered dynamically by tuya_cards.js -->
+      </div>
+    </section>
+
+    <!-- VIEW 2: SMARTLIFE DEVICES -->
+    <section id="view-devices" class="view-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <div>
+          <h2 style="font-size: 22px; font-weight: 700;">SmartLife / Tuya Connected Devices</h2>
+          <p style="color: var(--text-muted); font-size: 14px;">Local fast socket and cloud integrated controls</p>
+        </div>
+        <button class="action-btn" id="btn-scan-devices" style="background: rgba(255,255,255,0.08);">
+          🔍 Scan Local Devices
+        </button>
+      </div>
+
+      <div class="dashboard-grid" id="devices-grid">
+        <!-- Rendered dynamically -->
+      </div>
+    </section>
+
+    <!-- VIEW 3: KODI MEDIA CENTER -->
+    <section id="view-kodi" class="view-section">
+      <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr; align-items: start;">
+        <!-- Kodi Status & Launcher -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Kodi Media Center</div>
+              <div class="card-subtitle" id="kodi-status-badge">● Online</div>
+            </div>
+            <div class="card-icon">🎬</div>
+          </div>
+
+          <div style="margin: 20px 0;">
+            <div style="font-size: 13px; color: var(--text-muted);">Now Playing:</div>
+            <div id="kodi-now-playing" style="font-size: 18px; font-weight: 700; margin-top: 4px;">Nothing Playing</div>
+          </div>
+
+          <div style="display: flex; gap: 12px; margin-bottom: 16px;">
+            <button class="action-btn" id="btn-kodi-playpause" style="flex: 1; justify-content: center;">
+              ⏯ Play / Pause
+            </button>
+            <button class="action-btn" id="btn-kodi-stop" style="background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); color: var(--accent-red);">
+              ⏹ Stop
+            </button>
+          </div>
+
+          <button class="action-btn kodi-btn" id="btn-launch-kodi" style="width: 100%; justify-content: center;">
+            🎬 Launch Kodi on TV/Screen
+          </button>
+        </div>
+
+        <!-- Touch D-Pad Remote Control -->
+        <div class="card" style="text-align: center;">
+          <div class="card-header">
+            <div class="card-title">Touch Remote Control</div>
+            <div class="card-icon">📱</div>
+          </div>
+
+          <div class="remote-dpad">
+            <div></div>
+            <button class="dpad-btn" data-action="up">▲</button>
+            <div></div>
+
+            <button class="dpad-btn" data-action="left">◀</button>
+            <button class="dpad-btn center-btn" data-action="select">OK</button>
+            <button class="dpad-btn" data-action="right">▶</button>
+
+            <div></div>
+            <button class="dpad-btn" data-action="down">▼</button>
+            <div></div>
+          </div>
+
+          <div style="display: flex; justify-content: center; gap: 16px; margin-top: 14px;">
+            <button class="action-btn" style="background: rgba(255,255,255,0.06);" data-action="back">↩ Back</button>
+            <button class="action-btn" style="background: rgba(255,255,255,0.06);" data-action="home">🏠 Home</button>
+            <button class="action-btn" style="background: rgba(255,255,255,0.06);" data-action="osd">📋 Menu</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 4: YOUTUBE & AMBIENT AUDIO -->
+    <section id="view-audio" class="view-section">
+      <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr;">
+        <!-- Player Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Ambient & YouTube Audio</div>
+              <div class="card-subtitle" id="media-play-status">Stopped</div>
+            </div>
+            <div class="card-icon">🎧</div>
+          </div>
+
+          <div style="margin: 16px 0;">
+            <div style="font-size: 13px; color: var(--text-muted);">Current Audio Stream:</div>
+            <div id="media-track-title" style="font-size: 18px; font-weight: 700; margin-top: 4px;">No stream playing</div>
+          </div>
+
+          <div style="display: flex; gap: 12px; margin-bottom: 20px;">
+            <button class="action-btn" id="btn-media-toggle" style="flex: 1; justify-content: center;">
+              ▶ Play
+            </button>
+            <button class="action-btn" id="btn-media-stop" style="background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); color: var(--accent-red);">
+              ⏹ Stop
+            </button>
+          </div>
+
+          <div class="slider-container">
+            <div class="slider-label">
+              <span>Stream Volume</span>
+            </div>
+            <input type="range" min="0" max="100" value="50" class="touch-slider" id="media-volume-slider">
+          </div>
+
+          <div style="margin-top: 24px;">
+            <div style="font-size: 14px; margin-bottom: 8px;">Play Custom YouTube URL:</div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="media-custom-url" placeholder="https://www.youtube.com/watch?v=..." style="flex: 1; padding: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 14px;">
+              <button class="action-btn" id="btn-play-custom-url">Play</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Presets Card -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Curated Ambient Streams</div>
+            <div class="card-icon">📻</div>
+          </div>
+          <div id="media-presets-list" style="margin-top: 10px;">
+            <!-- Rendered dynamically -->
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 5: BLUETOOTH SURROUND SOUND -->
+    <section id="view-bluetooth" class="view-section">
+      <div class="dashboard-grid" style="grid-template-columns: 1fr 1fr;">
+        <!-- Status Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title" id="bt-device-name">Surround Sound</div>
+              <div class="card-subtitle" id="bt-status-badge">Disconnected</div>
+            </div>
+            <div class="card-icon">🔊</div>
+          </div>
+
+          <div class="slider-container" style="margin: 20px 0;">
+            <div class="slider-label">
+              <span>Master Output Volume</span>
+              <span id="bt-volume-label">70%</span>
+            </div>
+            <input type="range" min="0" max="100" value="70" class="touch-slider" id="bt-volume-slider">
+          </div>
+
+          <div style="display: flex; gap: 12px;">
+            <button class="action-btn" id="btn-scan-bluetooth" style="flex: 1; justify-content: center;">
+              🔍 Scan Paired Devices
+            </button>
+            <button class="action-btn" id="btn-bt-disconnect" style="background: rgba(239, 68, 68, 0.2); border: 1px solid var(--accent-red); color: var(--accent-red);">
+              Disconnect
+            </button>
+          </div>
+        </div>
+
+        <!-- Paired Devices List -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Available Soundbars & Speakers</div>
+            <div class="card-icon">📡</div>
+          </div>
+          <div id="bt-devices-list" style="margin-top: 10px;">
+            <div style="color: var(--text-muted); padding: 12px;">Click 'Scan' to find nearby or paired Bluetooth surround devices.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- VIEW 6: SYSTEM TELEMETRY -->
+    <section id="view-system" class="view-section">
+      <div class="dashboard-grid">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">CPU Utilization</div>
+            <div class="card-icon">⚡</div>
+          </div>
+          <div id="telemetry-cpu" style="font-size: 32px; font-weight: 700; color: var(--accent-blue);">--%</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">CPU Temperature</div>
+            <div class="card-icon">🌡️</div>
+          </div>
+          <div id="telemetry-temp" style="font-size: 32px; font-weight: 700; color: var(--accent-amber);">--°C</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Memory (RAM)</div>
+            <div class="card-icon">🧠</div>
+          </div>
+          <div id="telemetry-mem" style="font-size: 32px; font-weight: 700; color: var(--accent-green);">--%</div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Raspberry Pi IP</div>
+            <div class="card-icon">🌐</div>
+          </div>
+          <div id="telemetry-ip" style="font-size: 26px; font-weight: 700;">127.0.0.1</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Fullscreen Ambient Screensaver Overlay -->
+  <div id="screensaver-overlay">
+    <div id="screensaver-bg" class="screensaver-bg"></div>
+    <div class="screensaver-scrim"></div>
+
+    <!-- Top Overlay: Clock & Weather -->
+    <div class="screensaver-top">
+      <div>
+        <div id="ss-clock" class="screensaver-clock">12:00</div>
+        <div id="ss-date" class="screensaver-date">Mon, Jan 1</div>
+      </div>
+
+      <div class="screensaver-weather">
+        <span style="font-size: 38px;">🌤️</span>
+        <div>
+          <div class="weather-temp live-weather-temp">--°C</div>
+          <div style="font-size: 14px; color: rgba(255,255,255,0.8);" class="live-weather-desc">Sunny</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bottom Overlay: Dynamic Smart Cards & Wake Hint -->
+    <div class="screensaver-bottom">
+      <div class="screensaver-cards">
+        <div class="ambient-card">
+          <span style="font-size: 24px;">💡</span>
+          <div>
+            <div style="font-size: 11px; color: rgba(255,255,255,0.6);">SmartLife</div>
+            <div id="ss-active-devices" style="font-weight: 700; font-size: 15px;">0 Active Devices</div>
+          </div>
+        </div>
+
+        <div class="ambient-card">
+          <span style="font-size: 24px;">🌡️</span>
+          <div>
+            <div style="font-size: 11px; color: rgba(255,255,255,0.6);">Pi Temp</div>
+            <div id="ss-cpu-temp" style="font-weight: 700; font-size: 15px;">--°C</div>
+          </div>
+        </div>
+
+        <div class="ambient-card">
+          <span style="font-size: 24px;">🔊</span>
+          <div>
+            <div style="font-size: 11px; color: rgba(255,255,255,0.6);">Surround</div>
+            <div style="font-weight: 700; font-size: 15px;">Connected</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="wake-hint">
+        👆 Tap anywhere to wake
+      </div>
+    </div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/app.js"></script>
+  <script src="/js/tuya_cards.js"></script>
+  <script src="/js/screensaver.js"></script>
+  <script src="/js/kodi.js"></script>
+  <script src="/js/bt_audio.js"></script>
+</body>
+</html>

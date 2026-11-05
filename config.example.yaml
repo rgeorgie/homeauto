@@ -1,0 +1,103 @@
+# HomeAuto Platform Configuration
+# Copy this file to config.yaml and update with your settings
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  debug: false
+
+# SmartLife / Tuya Connected Devices
+# You can use Local Control (recommended, via TinyTuya) or Cloud API
+tuya:
+  mode: "local" # options: "local", "cloud", or "both"
+  
+  # Cloud credentials (required for initial device scan or cloud mode)
+  # Obtain from iot.tuya.com (free developer account linked to SmartLife app)
+  cloud:
+    access_id: "your_tuya_access_id"
+    access_secret: "your_tuya_access_secret"
+    endpoint: "https://openapi.tuyaeu.com" # https://openapi.tuyaeu.com (EU), https://openapi.tuyaus.com (US), https://openapi.tuyacn.com (CN)
+    user_id: "" # SmartLife UID (optional)
+
+  # Manual Local Device list (Fast local control via local IP and Local Key)
+  devices:
+    - id: "bf0123456789abcdef"
+      name: "Living Room Light"
+      ip: "192.screen.0.101"
+      local_key: "0123456789abcdef"
+      version: 3.3 # Protocol version: 3.1, 3.3, 3.4, or 3.5
+      type: "light" # light, switch, socket, climate, sensor
+      category: "dj" # Tuya category code
+      room: "Living Room"
+
+    - id: "bf9876543210fedcba"
+      name: "Surround Power Plug"
+      ip: "192.168.0.102"
+      local_key: "fedcba9876543210"
+      version: 3.3
+      type: "socket"
+      category: "cz"
+      room: "Media Area"
+
+    - id: "bf1122334455667788"
+      name: "Ambient LED Strip"
+      ip: "192.168.0.103"
+      local_key: "1122334455667788"
+      version: 3.3
+      type: "light"
+      category: "dj"
+      room: "Living Room"
+
+# Bluetooth Surround Sound Management
+bluetooth_audio:
+  enabled: true
+  # Target Bluetooth speaker/soundbar MAC address
+  target_mac: "00:11:22:33:44:55"
+  device_name: "Surround Sound BT"
+  auto_reconnect: true
+  reconnect_interval_seconds: 15
+  default_volume: 70 # 0-100
+
+# Kodi Media Center Integration
+kodi:
+  enabled: true
+  host: "127.0.0.1" # or IP of Kodi instance
+  port: 8080 # Webserver JSON-RPC port
+  user: "kodi"
+  password: ""
+  launch_command: "kodi-standalone" # Command to launch Kodi on Raspbian
+  auto_switch_display: true
+
+# Screensaver & Ambient Display
+screensaver:
+  enabled: true
+  idle_timeout_seconds: 120 # Start screensaver after 2 mins idle
+  photo_transition_seconds: 15
+  photo_directory: "./frontend/assets/photos"
+  use_unsplash_random: true # Fallback to Unsplash HD Nature if no local photos
+  
+  # Background YouTube Audio stream or playlist
+  youtube_audio:
+    enabled: true
+    auto_play_on_screensaver: false
+    volume: 50
+    preset_streams:
+      - title: "Lofi Hip Hop Radio (Beats to Relax/Study)"
+        url: "https://www.youtube.com/watch?v=jfKfPfyJRdk"
+      - title: "Peaceful Ambient Nature Sounds"
+        url: "https://www.youtube.com/watch?v=eKFTSSKCzWA"
+      - title: "Smooth Jazz Lounge"
+        url: "https://www.youtube.com/watch?v=Dx5qFachd3A"
+
+  # Glanceable cards to display on top of screensaver
+  widgets:
+    show_clock: true
+    show_weather: true
+    show_device_summaries: true
+    show_system_telemetry: true
+
+# Weather widget settings (Open-Meteo free API - no API key needed!)
+weather:
+  latitude: 51.5074
+  longitude: -0.1278
+  units: "celsius" # celsius or fahrenheit

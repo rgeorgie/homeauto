@@ -1,0 +1,15 @@
+[Unit]
+Description=HomeAuto Platform Backend Hub
+After=network.target sound.target bluetooth.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/homeauto
+ExecStart=/home/pi/homeauto/venv/bin/python -m backend.main
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
