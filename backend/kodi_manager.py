@@ -44,10 +44,6 @@ class KodiManager:
         if not self.config.enabled:
             return None
 
-        # Prevent querying HomeAuto server itself if Kodi port was left at 8080
-        if self.config.host in ["127.0.0.1", "localhost"] and self.config.port == 8080:
-            return None
-
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -58,11 +54,12 @@ class KodiManager:
 
         def _request():
             try:
-                res = requests.post(self.rpc_url, json=payload, auth=self.auth, timeout=2.0)
+                res = requests.post(self.rpc_url, json=payload, auth=self.auth, timeout=1.5)
                 if res.status_code == 200:
-                    return res.json().get("result")
-            except Exception:
-                pass
+                    data = res.json()
+                    return data.get("result")
+            except Exception as e:
+                logger.debug(f"Kodi JSON-RPC request error ({method}): {e}")
             return None
 
         loop = asyncio.get_event_loop()
@@ -118,22 +115,25 @@ class KodiManager:
         return False
 
     async def send_input(self, action: str) -> bool:
-        """Sends GUI input actions (Up, Down, Left, Right, Select, Back, Home, etc.)"""
+        """Sends GUI input actions (Up, Down, Left, Right, Select, Back, Home, Menu, etc.)"""
         method_map = {
             "up": "Input.Up",
             "down": "Input.Down",
             "left": "Input.Left",
             "right": "Input.Right",
             "select": "Input.Select",
+            "ok": "Input.Select",
             "back": "Input.Back",
             "home": "Input.Home",
             "info": "Input.Info",
-            "osd": "Input.ShowOSD"
+            "osd": "Input.ShowOSD",
+            "menu": "Input.ContextMenu",
+            "contextmenu": "Input.ContextMenu"
         }
         method = method_map.get(action.lower())
         if method:
             res = await self.send_rpc(method)
-            return res is not None
+            return res == "OK" or res is not None
         return False
 
     async def launch_kodi(self) -> bool:
