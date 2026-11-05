@@ -1,6 +1,8 @@
+import os
 import logging
 import asyncio
 import subprocess
+import shutil
 import re
 from typing import Dict, Any, List, Optional
 from backend.config import BluetoothAudioConfig
@@ -14,8 +16,16 @@ class BluetoothAudioManager:
         self.current_device_name = self.config.device_name
         self.current_mac = self.config.target_mac
         self.volume = self.config.default_volume
+        self.active_sink_name = ""
         self._reconnect_task: Optional[asyncio.Task] = None
         self._running = False
+
+    def _get_audio_env(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        uid = os.getuid()
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+        env.setdefault("PULSE_SERVER", f"unix:/run/user/{uid}/pulse/native")
+        return env
 
     def start_background_service(self):
         self._running = True
@@ -40,10 +50,14 @@ class BluetoothAudioManager:
             try:
                 status = await self.check_connection_status()
                 if not status.get("connected") and self.config.target_mac:
-                    logger.info(f"Target Bluetooth speaker ({self.config.target_mac}) not connected. Attempting connect...")
+                    logger.info(f"Target Bluetooth speaker ({self.config.target_mac}) disconnected. Attempting reconnect...")
                     await self.connect_device(self.config.target_mac)
+                elif status.get("connected") and self.config.target_mac:
+                    # If connected but sink is not yet Bluetooth, ensure default sink is routed
+                    if not self.active_sink_name or ("bluez" not in self.active_sink_name.lower()):
+                        await self.switch_to_bluetooth_sink(self.config.target_mac)
             except Exception as e:
-                logger.error(f"Error in BT auto-reconnect loop: {e}")
+                logger.debug(f"Error in BT auto-reconnect loop: {e}")
             await asyncio.sleep(self.config.reconnect_interval_seconds)
 
     async def check_connection_status(self) -> Dict[str, Any]:
@@ -51,9 +65,11 @@ class BluetoothAudioManager:
         mac = self.config.target_mac
         connected = False
         device_name = self.config.device_name
+        active_sink = ""
 
         def _exec():
-            nonlocal connected, device_name
+            nonlocal connected, device_name, active_sink
+            env = self._get_audio_env()
             try:
                 if mac:
                     res = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=5)
@@ -63,7 +79,6 @@ class BluetoothAudioManager:
                             if "Name:" in line:
                                 device_name = line.split("Name:", 1)[1].strip()
                 else:
-                    # Check paired and connected devices
                     res = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True, timeout=5)
                     lines = [l for l in res.stdout.splitlines() if l.strip()]
                     if lines:
@@ -71,27 +86,71 @@ class BluetoothAudioManager:
                         parts = lines[0].split(" ", 2)
                         if len(parts) >= 3:
                             device_name = parts[2]
+
+                # Check default sink in pactl / PipeWire
+                if shutil.which("pactl"):
+                    info_res = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=3, env=env)
+                    for line in info_res.stdout.splitlines():
+                        if "Default Sink:" in line:
+                            active_sink = line.split("Default Sink:", 1)[1].strip()
             except Exception as e:
-                logger.debug(f"Bluetoothctl check error (expected if mock/mac not present): {e}")
+                logger.debug(f"Bluetoothctl check error: {e}")
                 connected = False
 
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _exec)
         self.is_connected = connected
         self.current_device_name = device_name
+        self.active_sink_name = active_sink
         return {
             "connected": connected,
             "mac": self.config.target_mac,
             "name": device_name,
-            "volume": self.volume
+            "volume": self.volume,
+            "active_sink": active_sink,
+            "is_bt_sink_active": "bluez" in active_sink.lower() if active_sink else False
         }
 
+    async def get_audio_sinks(self) -> List[Dict[str, Any]]:
+        """Lists all system audio output sinks (HDMI, Analog Headphone, Bluetooth Soundbar)."""
+        def _get_sinks():
+            sinks = []
+            env = self._get_audio_env()
+            if not shutil.which("pactl"):
+                return sinks
+            try:
+                res = subprocess.run(["pactl", "list", "sinks"], capture_output=True, text=True, timeout=4, env=env)
+                current_sink: Dict[str, Any] = {}
+                for line in res.stdout.splitlines():
+                    stripped = line.strip()
+                    if stripped.startswith("Sink #"):
+                        if current_sink and "name" in current_sink:
+                            sinks.append(current_sink)
+                        current_sink = {"id": stripped.split("#")[1], "is_default": False}
+                    elif stripped.startswith("Name:") and current_sink is not None:
+                        current_sink["name"] = stripped.split("Name:", 1)[1].strip()
+                        current_sink["is_bluetooth"] = "bluez" in current_sink["name"].lower()
+                    elif stripped.startswith("Description:") and current_sink is not None:
+                        current_sink["description"] = stripped.split("Description:", 1)[1].strip()
+                if current_sink and "name" in current_sink:
+                    sinks.append(current_sink)
+
+                # Mark default
+                for s in sinks:
+                    if s.get("name") == self.active_sink_name:
+                        s["is_default"] = True
+            except Exception as e:
+                logger.debug(f"Error querying audio sinks: {e}")
+            return sinks
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _get_sinks)
+
     async def scan_devices(self) -> List[Dict[str, str]]:
-        """Scans for nearby Bluetooth devices."""
+        """Scans for nearby and paired Bluetooth devices."""
         def _scan():
             devices = []
             try:
-                # Get paired / cached devices first
                 res = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=5)
                 for line in res.stdout.splitlines():
                     parts = line.strip().split(" ", 2)
@@ -105,11 +164,11 @@ class BluetoothAudioManager:
         return await loop.run_in_executor(None, _scan)
 
     async def connect_device(self, mac: str) -> bool:
-        """Connects to a specific Bluetooth MAC."""
+        """Connects to a specific Bluetooth MAC and routes audio."""
         def _connect():
             try:
                 subprocess.run(["bluetoothctl", "trust", mac], capture_output=True, timeout=5)
-                res = subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, text=True, timeout=10)
+                res = subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, text=True, timeout=12)
                 return "Connection successful" in res.stdout or "Connected: yes" in res.stdout
             except Exception as e:
                 logger.error(f"Error connecting to BT device {mac}: {e}")
@@ -121,28 +180,46 @@ class BluetoothAudioManager:
             self.config.target_mac = mac
             self.is_connected = True
             logger.info(f"Successfully connected to Bluetooth device: {mac}")
-            # Switch default audio sink to Bluetooth
-            await asyncio.sleep(1)
+            # Allow BlueZ -> PipeWire/PulseAudio sink registration (1-2s)
+            await asyncio.sleep(1.5)
             await self.switch_to_bluetooth_sink(mac)
         return success
 
     async def switch_to_bluetooth_sink(self, mac: str) -> bool:
-        """Sets the connected Bluetooth sink as the system default audio sink."""
+        """Finds the Bluetooth audio sink and sets it as system default, migrating active streams."""
         formatted_mac = mac.replace(":", "_").upper()
+        formatted_mac_lower = mac.replace(":", "_").lower()
 
         def _switch():
+            env = self._get_audio_env()
             try:
-                # 1. Look for bluez sink in pactl
-                res = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=3)
+                if not shutil.which("pactl"):
+                    return False
+                res = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=3, env=env)
+                target_sink = None
                 for line in res.stdout.splitlines():
-                    if formatted_mac in line or "bluez" in line:
-                        parts = line.split()
-                        if len(parts) >= 2:
-                            sink_name = parts[1]
-                            subprocess.run(["pactl", "set-default-sink", sink_name], capture_output=True)
-                            subprocess.run(["pactl", "set-sink-volume", sink_name, f"{self.volume}%"], capture_output=True)
-                            logger.info(f"Switched system default audio sink to Bluetooth: {sink_name}")
-                            return True
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        sink_name = parts[1]
+                        if formatted_mac in sink_name or formatted_mac_lower in sink_name or "bluez_output" in sink_name or "bluez_sink" in sink_name:
+                            target_sink = sink_name
+                            break
+
+                if target_sink:
+                    # 1. Set as default sink
+                    subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
+                    subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
+                    
+                    # 2. Migrate any currently playing streams (e.g. mpv, youtube audio)
+                    inputs_res = subprocess.run(["pactl", "list", "short", "sink-inputs"], capture_output=True, text=True, timeout=3, env=env)
+                    for in_line in inputs_res.stdout.splitlines():
+                        in_parts = in_line.split()
+                        if in_parts:
+                            input_idx = in_parts[0]
+                            subprocess.run(["pactl", "move-sink-input", input_idx, target_sink], capture_output=True, env=env)
+
+                    logger.info(f"Successfully switched default audio sink to Bluetooth: {target_sink}")
+                    return True
             except Exception as e:
                 logger.debug(f"Error switching audio sink: {e}")
             return False
@@ -151,21 +228,32 @@ class BluetoothAudioManager:
         return await loop.run_in_executor(None, _switch)
 
     async def play_test_tone(self) -> bool:
-        """Plays a test tone or chime on the active audio output."""
+        """Plays a pleasant 440Hz test audio chime across active speaker/soundbar."""
         def _play():
-            try:
-                # Try pactl / paplay / aplay / speaker-test
-                cmd = ["speaker-test", "-t", "sine", "-f", "440", "-l", "1", "-p", "1"]
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
-            except Exception:
+            env = self._get_audio_env()
+            # 1. Try mpv sine wave synthesizer
+            if shutil.which("mpv"):
                 try:
-                    # Fallback to mpv synthesizing tone
-                    cmd = ["mpv", "--no-video", "--length=2", "lavfi://[sine=frequency=440:duration=2]"]
-                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    cmd = [
+                        "mpv",
+                        "--no-video",
+                        "--ao=pulse,alsa",
+                        f"--volume={self.volume}",
+                        "--length=1.5",
+                        "lavfi://[sine=frequency=440:duration=1.5]"
+                    ]
+                    subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                     return True
                 except Exception:
-                    return False
+                    pass
+
+            # 2. Try paplay or speaker-test
+            try:
+                cmd = ["speaker-test", "-t", "sine", "-f", "440", "-l", "1", "-p", "1"]
+                subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                return False
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _play)
@@ -191,18 +279,18 @@ class BluetoothAudioManager:
         return success
 
     async def set_volume(self, volume_percent: int) -> int:
-        """Sets output volume (0-100) via pactl / wpctl / amixer."""
+        """Sets output volume (0-100) via pactl / PipeWire / ALSA."""
         vol = max(0, min(100, volume_percent))
         self.volume = vol
 
         def _set_vol():
+            env = self._get_audio_env()
             try:
-                # Try pactl (PulseAudio / PipeWire Pulse)
-                pactl_res = subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{vol}%"], capture_output=True)
-                if pactl_res.returncode == 0:
+                if shutil.which("pactl"):
+                    subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{vol}%"], capture_output=True, env=env)
                     return
-                # Try amixer fallback
-                subprocess.run(["amixer", "-M", "set", "Master", f"{vol}%"], capture_output=True)
+                if shutil.which("amixer"):
+                    subprocess.run(["amixer", "-M", "set", "Master", f"{vol}%"], capture_output=True)
             except Exception as e:
                 logger.debug(f"Volume adjustment system call error: {e}")
 

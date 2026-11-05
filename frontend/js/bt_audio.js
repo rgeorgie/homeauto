@@ -58,11 +58,24 @@ function renderBluetoothStatus(bt) {
   const badgeEl = document.getElementById("bt-status-badge");
   const volSlider = document.getElementById("bt-volume-slider");
   const volLabel = document.getElementById("bt-volume-label");
+  const sinkEl = document.getElementById("bt-active-sink-label");
 
   if (nameEl) nameEl.textContent = bt.name || "Surround Sound";
   if (badgeEl) {
-    badgeEl.textContent = bt.connected ? "Connected" : "Disconnected";
-    badgeEl.className = `status-pill ${bt.connected ? '' : 'disconnected'}`;
+    const isBtActive = bt.is_bt_sink_active || (bt.connected && bt.active_sink && bt.active_sink.toLowerCase().includes('bluez'));
+    if (bt.connected && isBtActive) {
+      badgeEl.textContent = "🔊 Soundbar Active";
+      badgeEl.className = "status-pill";
+    } else if (bt.connected) {
+      badgeEl.textContent = "Connected (HDMI Output)";
+      badgeEl.className = "status-pill";
+    } else {
+      badgeEl.textContent = "Disconnected";
+      badgeEl.className = "status-pill disconnected";
+    }
+  }
+  if (sinkEl && bt.active_sink) {
+    sinkEl.textContent = bt.active_sink;
   }
   if (volSlider && bt.volume !== undefined) volSlider.value = bt.volume;
   if (volLabel && bt.volume !== undefined) volLabel.textContent = `${bt.volume}%`;

@@ -278,10 +278,20 @@ async def sync_tuya_cloud_keys():
 async def jsonrpc_endpoint(payload: Dict[str, Any] = Body(default={})):
     return {"jsonrpc": "2.0", "result": "pong", "id": payload.get("id", 1)}
 
-# Bluetooth Surround Sound
+# Bluetooth Surround Sound & Audio Routing
 @app.get("/api/bluetooth")
 async def get_bluetooth_status():
     return await bt_mgr.check_connection_status()
+
+@app.get("/api/bluetooth/sinks")
+async def get_audio_sinks():
+    return await bt_mgr.get_audio_sinks()
+
+@app.post("/api/bluetooth/switch-sink")
+async def switch_audio_sink(payload: Dict[str, str] = Body(...)):
+    sink_or_mac = payload.get("sink") or payload.get("mac", "")
+    success = await bt_mgr.switch_to_bluetooth_sink(sink_or_mac)
+    return {"status": "ok" if success else "failed"}
 
 @app.get("/api/bluetooth/scan")
 async def scan_bluetooth_devices():

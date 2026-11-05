@@ -1,12 +1,17 @@
+import os
+import json
 import logging
 import asyncio
 import subprocess
 import shutil
+import socket
 from typing import Dict, Any, Optional, List
 import yt_dlp
 from backend.config import YouTubeAudioConfig
 
 logger = logging.getLogger("HomeAuto.MediaPlayer")
+
+MPV_IPC_SOCK = "/tmp/mpv-homeauto.sock"
 
 class MediaPlayer:
     def __init__(self, config: YouTubeAudioConfig):
@@ -23,6 +28,29 @@ class MediaPlayer:
             'extract_flat': False
         }
 
+    def _get_audio_env(self) -> Dict[str, str]:
+        env = os.environ.copy()
+        uid = os.getuid()
+        env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{uid}")
+        env.setdefault("PULSE_SERVER", f"unix:/run/user/{uid}/pulse/native")
+        return env
+
+    def _send_ipc_command(self, command: List[Any]) -> bool:
+        """Sends a JSON IPC command to the running MPV instance via unix socket."""
+        if not os.path.exists(MPV_IPC_SOCK):
+            return False
+        try:
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.settimeout(1.0)
+            client.connect(MPV_IPC_SOCK)
+            msg = json.dumps({"command": command}) + "\n"
+            client.sendall(msg.encode("utf-8"))
+            client.close()
+            return True
+        except Exception as e:
+            logger.debug(f"MPV IPC send error: {e}")
+            return False
+
     def reload_config(self, config: YouTubeAudioConfig):
         self.config = config
         self.volume = self.config.volume
@@ -36,7 +64,7 @@ class MediaPlayer:
                     if 'entries' in info: # Playlist
                         info = info['entries'][0]
                     stream_url = info.get('url')
-                    title = info.get('title', 'Unknown Stream')
+                    title = info.get('title', 'YouTube Audio Stream')
                     return {"stream_url": stream_url, "title": title}
             except Exception as e:
                 logger.error(f"Error extracting stream info from {youtube_url}: {e}")
@@ -46,7 +74,7 @@ class MediaPlayer:
         return await loop.run_in_executor(None, _extract)
 
     async def play(self, url_or_preset: str, title: Optional[str] = None) -> bool:
-        """Plays YouTube stream via backend mpv player (if available) or prepares stream."""
+        """Plays YouTube stream via backend mpv player with Pulse/PipeWire audio routing."""
         self.stop()
         
         info = await self.get_stream_url(url_or_preset)
@@ -55,21 +83,27 @@ class MediaPlayer:
         self.current_url = url_or_preset
         self.is_playing = True
 
-        # Check if mpv is available on the Pi/system
         if shutil.which("mpv"):
             def _start_mpv():
                 try:
-                    import os
-                    env = os.environ.copy()
-                    uid = os.getuid()
-                    env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
-                    env["PULSE_SERVER"] = f"unix:/run/user/{uid}/pulse/native"
+                    env = self._get_audio_env()
+                    if os.path.exists(MPV_IPC_SOCK):
+                        try:
+                            os.remove(MPV_IPC_SOCK)
+                        except Exception:
+                            pass
 
                     target_play_url = direct_url or url_or_preset
                     cmd = [
                         "mpv",
                         "--no-video",
+                        "--ao=pulse,alsa",
+                        "--audio-client-name=HomeAuto",
+                        f"--input-ipc-server={MPV_IPC_SOCK}",
                         f"--volume={self.volume}",
+                        "--network-timeout=15",
+                        "--reconnect=yes",
+                        "--reconnect-stream-max-retries=10",
                         "--ytdl=yes",
                         "--ytdl-format=bestaudio/best",
                         "--gapless-audio=yes",
@@ -81,7 +115,7 @@ class MediaPlayer:
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
-                    logger.info(f"Started mpv playback for: {self.current_title}")
+                    logger.info(f"Started mpv background audio playback for: {self.current_title}")
                 except Exception as e:
                     logger.error(f"Failed to start mpv: {e}")
 
@@ -91,26 +125,37 @@ class MediaPlayer:
         return True
 
     def pause(self):
-        # Stop process or mark paused
-        self.stop()
-        self.is_playing = False
+        """Toggles pause on active MPV playback."""
+        if self._send_ipc_command(["cycle", "pause"]):
+            self.is_playing = not self.is_playing
+        else:
+            self.stop()
 
     def stop(self):
+        """Stops active MPV playback process."""
+        self._send_ipc_command(["quit"])
         if self._mpv_process:
             try:
                 self._mpv_process.terminate()
-                self._mpv_process.wait(timeout=2)
+                self._mpv_process.wait(timeout=1.5)
             except Exception:
                 try:
                     self._mpv_process.kill()
                 except Exception:
                     pass
             self._mpv_process = None
+        
+        if os.path.exists(MPV_IPC_SOCK):
+            try:
+                os.remove(MPV_IPC_SOCK)
+            except Exception:
+                pass
         self.is_playing = False
 
     def set_volume(self, volume: int):
+        """Updates volume on the fly via MPV IPC socket."""
         self.volume = max(0, min(100, volume))
-        # Volume change will apply to next play or via pulse/alsa
+        self._send_ipc_command(["set_property", "volume", self.volume])
 
     def get_status(self) -> Dict[str, Any]:
         return {

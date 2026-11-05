@@ -23,12 +23,15 @@ sudo apt-get install -y \
   mpv \
   chromium-browser \
   bluez \
-  pulseaudio \
-  pulseaudio-module-bluetooth \
+  libspa-0.2-bluetooth \
+  pulseaudio-utils \
   xdotool \
   unclutter \
   git \
-  curl
+  curl || true
+
+# Install PipeWire / Pulse modules depending on Pi OS distribution
+sudo apt-get install -y pipewire-audio wireplumber || sudo apt-get install -y pulseaudio pulseaudio-module-bluetooth || true
 
 echo "==> Setting up Python virtual environment..."
 cd "$CURRENT_DIR"
