@@ -44,6 +44,11 @@ class KodiManager:
         if not self.config.enabled:
             return None
 
+        # Never query the HomeAuto server itself (it also answers /jsonrpc with "pong")
+        if self.config.host in ["127.0.0.1", "localhost"] and self.config.port == 8080:
+            logger.warning("Kodi port 8080 conflicts with HomeAuto's own port. Set kodi.port to Kodi's web server port (e.g. 8088).")
+            return None
+
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -75,7 +80,7 @@ class KodiManager:
                 "item": None
             }
 
-        if not players:
+        if not isinstance(players, list) or not players:
             return {
                 "online": True,
                 "playing": False,

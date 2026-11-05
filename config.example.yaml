@@ -62,7 +62,7 @@ bluetooth_audio:
 kodi:
   enabled: true
   host: "127.0.0.1" # or IP of Kodi instance
-  port: 8080 # Webserver JSON-RPC port
+  port: 8088 # Kodi web server port (must differ from HomeAuto's own port 8080)
   user: "kodi"
   password: ""
   launch_command: "kodi-standalone" # Command to launch Kodi on Raspbian

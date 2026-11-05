@@ -111,7 +111,7 @@ bluetooth_audio:
 kodi:
   enabled: true
   host: "127.0.0.1"
-  port: 8080
+  port: 8088  # must differ from HomeAuto port 8080
   launch_command: "kodi-standalone"
 
 # Ambient Screensaver
