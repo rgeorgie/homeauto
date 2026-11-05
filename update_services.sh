@@ -15,8 +15,8 @@ sudo systemctl daemon-reload
 
 # 2. Kill any old lingering python backend processes
 echo "==> Stopping any old backend instances..."
-sudo pkill -9 -f "backend.main" 2>/dev/null || true
-pkill -9 -f "backend.main" 2>/dev/null || true
+# "[b]ackend.main" keeps pkill from matching its own sudo/shell command line
+sudo pkill -9 -f "[b]ackend\.main" 2>/dev/null || true
 sleep 1
 
 # 2. Enable lingering so user services start at boot without manual login

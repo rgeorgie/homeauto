@@ -60,10 +60,8 @@ mkdir -p "$HOME/.config/autostart"
 cp systemd/homeauto-kiosk.desktop "$HOME/.config/autostart/homeauto-kiosk.desktop"
 sed -i "s|/home/pi/homeauto|$CURRENT_DIR|g" "$HOME/.config/autostart/homeauto-kiosk.desktop"
 
-# Install and configure systemd units for current user
+# Install and configure systemd user units (enables and starts them)
 "$CURRENT_DIR/update_services.sh"
-sudo systemctl enable homeauto.service
-sudo systemctl enable homeauto-kiosk.service
 
 echo "==> Configuring Bluetooth audio permissions..."
 sudo usermod -a -G bluetooth,audio "$USER_NAME"
@@ -74,7 +72,7 @@ echo "🎉 HomeAuto Platform Installation Complete!"
 echo "=========================================================="
 echo "Next steps:"
 echo "1. Edit your devices & Bluetooth MAC in: $CURRENT_DIR/config.yaml"
-echo "2. Start the service: sudo systemctl start homeauto.service"
-echo "3. Start the Touchscreen Kiosk: sudo systemctl start homeauto-kiosk.service"
+echo "2. Restart the service: systemctl --user restart homeauto.service"
+echo "3. Restart the Touchscreen Kiosk: systemctl --user restart homeauto-kiosk.service"
 echo "4. Or test run manually: source venv/bin/activate && python -m backend.main"
 echo "=========================================================="
