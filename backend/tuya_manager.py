@@ -100,138 +100,149 @@ def extract_tuya_climate_data(dps: Dict[str, Any], dev_type: str = "climate") ->
                 mode = m_val
                 break
 
-    # --- Schema A: Standard Tuya (Category wk / wkf / rs / qn) ---
-    # DP 16 = temp_set, DP 24 = temp_current
-    if '16' in dps and not isinstance(dps['16'], bool):
-        parsed = _parse_temp(dps['16'])
-        if parsed is not None:
-            target_temp = parsed
-            target_dps_key = '16'
-            target_scale = _get_scale(dps['16'])
+    is_sensor = '1' in dps and isinstance(dps['1'], (int, float)) and not isinstance(dps['1'], bool) and ('2' in dps or '3' in dps) and not ('16' in dps or '101' in dps or '103' in dps)
 
-    if '24' in dps and not isinstance(dps['24'], bool):
-        parsed = _parse_temp(dps['24'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '24'
-
-    # --- Schema B: Moes / Avatto / WiFi Underfloor heating ---
-    # DP 101 = temp_set, DP 102 = temp_current
-    if target_temp is None and '101' in dps and not isinstance(dps['101'], bool):
-        parsed = _parse_temp(dps['101'])
-        if parsed is not None:
-            target_temp = parsed
-            target_dps_key = '101'
-            target_scale = _get_scale(dps['101'])
-
-    if current_temp is None and '102' in dps and not isinstance(dps['102'], bool):
-        parsed = _parse_temp(dps['102'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '102'
-
-    # --- Schema C: Tuya TRV / Radiator valves (HY368 / TS0601 / Sea801 / TV01) ---
-    # DP 103 = temp_set, DP 104 = temp_current (or DP 24 target, DP 28 current)
-    if target_temp is None and '103' in dps and not isinstance(dps['103'], bool):
-        parsed = _parse_temp(dps['103'])
-        if parsed is not None:
-            target_temp = parsed
-            target_dps_key = '103'
-            target_scale = _get_scale(dps['103'])
-
-    if current_temp is None and '104' in dps and not isinstance(dps['104'], bool):
-        parsed = _parse_temp(dps['104'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '104'
-
-    if current_temp is None and '28' in dps and not isinstance(dps['28'], bool):
-        parsed = _parse_temp(dps['28'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '28'
-
-    # --- Schema D: Beca BHT-002 / BHT-6000 / Floureon ---
-    # DP 2 = temp_set (int), DP 3 = temp_current (int)
-    if target_temp is None and '2' in dps and isinstance(dps['2'], (int, float)) and not isinstance(dps['2'], bool):
-        parsed = _parse_temp(dps['2'])
-        if parsed is not None:
-            target_temp = parsed
-            target_dps_key = '2'
-            target_scale = _get_scale(dps['2'])
-
-    if current_temp is None and '3' in dps and isinstance(dps['3'], (int, float)) and not isinstance(dps['3'], bool):
-        parsed = _parse_temp(dps['3'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '3'
-
-    # --- Schema E: Floor heating with mode on DP 2 ---
-    # DP 4 = temp_set (int), DP 5 = temp_current (int)
-    if target_temp is None and '4' in dps and isinstance(dps['4'], (int, float)) and not isinstance(dps['4'], bool):
-        parsed = _parse_temp(dps['4'])
-        if parsed is not None:
-            target_temp = parsed
-            target_dps_key = '4'
-            target_scale = _get_scale(dps['4'])
-
-    if current_temp is None and '5' in dps and isinstance(dps['5'], (int, float)) and not isinstance(dps['5'], bool):
-        parsed = _parse_temp(dps['5'])
-        if parsed is not None:
-            current_temp = parsed
-            current_dps_key = '5'
-
-    # --- Schema F: Temperature & Humidity Sensors (Category wsdcg, th01, cg) ---
-    # DP 1 = current temperature, DP 2 = humidity, DP 3 = battery
-    if current_temp is None and '1' in dps and not isinstance(dps['1'], bool):
-        parsed = _parse_temp(dps['1'])
-        if parsed is not None:
-            current_temp = parsed
+    if is_sensor:
+        # Schema: Temperature Sensor (Category wsdcg, th01, cg)
+        # DP 1 = current temperature, DP 2 = humidity, DP 3 = battery
+        parsed_cur = _parse_temp(dps['1'])
+        if parsed_cur is not None:
+            current_temp = parsed_cur
             current_dps_key = '1'
+        if '2' in dps and isinstance(dps['2'], (int, float)) and not isinstance(dps['2'], bool):
+            h_val = int(dps['2'])
+            humidity = h_val if 0 <= h_val <= 100 else int(round(h_val / 10.0))
+        if '3' in dps and isinstance(dps['3'], (int, float)) and not isinstance(dps['3'], bool):
+            b_val = int(dps['3'])
+            battery = b_val if 0 <= b_val <= 100 else int(round(b_val / 10.0))
 
-    # --- Generic Fallback Scan for Target Temperature ---
-    if target_temp is None:
-        for k in ['16', '101', '103', '105', '106', '4', '2', '8', '18', '19', '26', '30', '40']:
-            if k in dps and not isinstance(dps[k], bool):
-                parsed = _parse_temp(dps[k])
-                if parsed is not None:
-                    target_temp = parsed
-                    target_dps_key = k
-                    target_scale = _get_scale(dps[k])
-                    break
+    if not is_sensor:
+        # --- Schema A: Standard Tuya (Category wk / wkf / rs / qn) ---
+        # DP 16 = temp_set, DP 24 = temp_current
+        if '16' in dps and not isinstance(dps['16'], bool):
+            parsed = _parse_temp(dps['16'])
+            if parsed is not None:
+                target_temp = parsed
+                target_dps_key = '16'
+                target_scale = _get_scale(dps['16'])
 
-    # --- Generic Fallback Scan for Current Temperature ---
-    if current_temp is None:
-        for k in ['24', '102', '104', '3', '5', '28', '115', '114', '116', '107', '109', '18', '19', '20', '1']:
-            if k in dps and k != target_dps_key and not isinstance(dps[k], bool):
-                parsed = _parse_temp(dps[k])
-                if parsed is not None:
-                    current_temp = parsed
-                    current_dps_key = k
-                    break
+        if '24' in dps and not isinstance(dps['24'], bool):
+            parsed = _parse_temp(dps['24'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '24'
 
-    # --- Humidity extraction ---
-    for h_key in ['2', '102', '114', '115', '116', '19', '21']:
-        if h_key in dps and h_key != target_dps_key and h_key != current_dps_key:
-            val = dps[h_key]
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                h_num = int(val)
-                if 0 <= h_num <= 100:
-                    humidity = h_num
-                    break
-                elif 100 < h_num <= 1000:
-                    humidity = int(round(h_num / 10.0))
-                    break
+        # --- Schema B: Moes / Avatto / WiFi Underfloor heating ---
+        # DP 101 = temp_set, DP 102 = temp_current
+        if target_temp is None and '101' in dps and not isinstance(dps['101'], bool):
+            parsed = _parse_temp(dps['101'])
+            if parsed is not None:
+                target_temp = parsed
+                target_dps_key = '101'
+                target_scale = _get_scale(dps['101'])
 
-    # --- Battery extraction ---
-    for b_key in ['3', '14', '15', '105', '115', '116']:
-        if b_key in dps and b_key != target_dps_key and b_key != current_dps_key and b_key != '2':
-            val = dps[b_key]
-            if isinstance(val, (int, float)) and not isinstance(val, bool):
-                b_num = int(val)
-                if 0 <= b_num <= 100:
-                    battery = b_num
-                    break
+        if current_temp is None and '102' in dps and not isinstance(dps['102'], bool):
+            parsed = _parse_temp(dps['102'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '102'
+
+        # --- Schema C: Tuya TRV / Radiator valves (HY368 / TS0601 / Sea801 / TV01) ---
+        # DP 103 = temp_set, DP 104 = temp_current (or DP 24 target, DP 28 current)
+        if target_temp is None and '103' in dps and not isinstance(dps['103'], bool):
+            parsed = _parse_temp(dps['103'])
+            if parsed is not None:
+                target_temp = parsed
+                target_dps_key = '103'
+                target_scale = _get_scale(dps['103'])
+
+        if current_temp is None and '104' in dps and not isinstance(dps['104'], bool):
+            parsed = _parse_temp(dps['104'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '104'
+
+        if current_temp is None and '28' in dps and not isinstance(dps['28'], bool):
+            parsed = _parse_temp(dps['28'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '28'
+
+        # --- Schema D: Floor heating with mode on DP 2 ---
+        # DP 4 = temp_set (int), DP 5 = temp_current (int)
+        if target_temp is None and '4' in dps and isinstance(dps['4'], (int, float)) and not isinstance(dps['4'], bool):
+            parsed = _parse_temp(dps['4'])
+            if parsed is not None:
+                target_temp = parsed
+                target_dps_key = '4'
+                target_scale = _get_scale(dps['4'])
+
+        if current_temp is None and '5' in dps and isinstance(dps['5'], (int, float)) and not isinstance(dps['5'], bool):
+            parsed = _parse_temp(dps['5'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '5'
+
+        # --- Schema E: Beca BHT-002 / BHT-6000 / Floureon ---
+        # DP 2 = temp_set (int), DP 3 = temp_current (int)
+        if target_temp is None and '2' in dps and isinstance(dps['2'], (int, float)) and not isinstance(dps['2'], bool):
+            parsed = _parse_temp(dps['2'])
+            if parsed is not None:
+                target_temp = parsed
+                target_dps_key = '2'
+                target_scale = _get_scale(dps['2'])
+
+        if current_temp is None and '3' in dps and isinstance(dps['3'], (int, float)) and not isinstance(dps['3'], bool):
+            parsed = _parse_temp(dps['3'])
+            if parsed is not None:
+                current_temp = parsed
+                current_dps_key = '3'
+
+        # --- Generic Fallback Scan for Target Temperature ---
+        if target_temp is None:
+            for k in ['16', '101', '103', '105', '106', '4', '2', '8', '18', '19', '26', '30', '40']:
+                if k in dps and not isinstance(dps[k], bool):
+                    parsed = _parse_temp(dps[k])
+                    if parsed is not None:
+                        target_temp = parsed
+                        target_dps_key = k
+                        target_scale = _get_scale(dps[k])
+                        break
+
+        # --- Generic Fallback Scan for Current Temperature ---
+        if current_temp is None:
+            for k in ['24', '102', '104', '3', '5', '28', '115', '114', '116', '107', '109', '18', '19', '20', '1']:
+                if k in dps and k != target_dps_key and not isinstance(dps[k], bool):
+                    parsed = _parse_temp(dps[k])
+                    if parsed is not None:
+                        current_temp = parsed
+                        current_dps_key = k
+                        break
+
+        # --- Humidity extraction ---
+        if humidity is None:
+            for h_key in ['2', '102', '114', '115', '116', '19', '21']:
+                if h_key in dps and h_key != target_dps_key and h_key != current_dps_key:
+                    val = dps[h_key]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        h_num = int(val)
+                        if 0 <= h_num <= 100:
+                            humidity = h_num
+                            break
+                        elif 100 < h_num <= 1000:
+                            humidity = int(round(h_num / 10.0))
+                            break
+
+        # --- Battery extraction ---
+        if battery is None:
+            for b_key in ['3', '14', '15', '105', '115', '116']:
+                if b_key in dps and b_key != target_dps_key and b_key != current_dps_key and b_key != '2':
+                    val = dps[b_key]
+                    if isinstance(val, (int, float)) and not isinstance(val, bool):
+                        b_num = int(val)
+                        if 0 <= b_num <= 100:
+                            battery = b_num
+                            break
 
     return {
         "target_temperature": target_temp,
