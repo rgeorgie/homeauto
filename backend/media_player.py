@@ -112,11 +112,11 @@ class MediaPlayer:
                             pass
 
                     target_play_url = direct_url or url_or_preset
+                    log_file = open("/tmp/mpv.log", "w")
                     cmd = [
                         "mpv",
                         "--no-video",
-                        "--ao=pulse,alsa",
-                        f"--audio-device=pulse/{bt_sink}" if bt_sink else "--ao=pulse,alsa",
+                        "--ao=pulse,pipewire,alsa",
                         "--audio-client-name=HomeAuto",
                         f"--input-ipc-server={MPV_IPC_SOCK}",
                         f"--volume={self.volume}",
@@ -131,8 +131,8 @@ class MediaPlayer:
                     self._mpv_process = subprocess.Popen(
                         cmd,
                         env=env,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
+                        stdout=log_file,
+                        stderr=log_file
                     )
                     logger.info(f"Started mpv background audio playback for: {self.current_title}")
                 except Exception as e:

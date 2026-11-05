@@ -45,9 +45,15 @@ function initBluetoothController() {
     testSoundBtn.addEventListener("click", async () => {
       showToast("Playing test audio chime on soundbar...");
       try {
-        await fetch("/api/bluetooth/test-sound", { method: "POST" });
+        const res = await fetch("/api/bluetooth/test-sound", { method: "POST" });
+        const data = await res.json();
+        if (data.status === "ok" || data.success) {
+          showToast(`🔊 Chime played via ${data.method || 'soundbar sink'}!`);
+        } else {
+          showToast(`Audio output error: ${data.error || 'Check soundbar connection'}`);
+        }
       } catch (err) {
-        showToast("Error testing sound");
+        showToast("Error testing sound: " + err.message);
       }
     });
   }

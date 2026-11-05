@@ -271,8 +271,35 @@ class BluetoothAudioManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _switch)
 
-    async def play_test_tone(self) -> bool:
-        """Plays a pleasant 440Hz test audio chime across active speaker/soundbar."""
+    def _generate_chime_wav(self, filepath: str = "/tmp/chime.wav") -> bool:
+        """Generates a high quality 2-tone melodic chime WAV file with zero external dependencies."""
+        try:
+            import wave
+            import struct
+            import math
+            sample_rate = 44100
+            duration = 1.0
+            freq1 = 587.33  # D5
+            freq2 = 880.00  # A5
+            n_samples = int(sample_rate * duration)
+            with wave.open(filepath, "w") as wav_file:
+                wav_file.setnchannels(2)
+                wav_file.setsampwidth(2)
+                wav_file.setframerate(sample_rate)
+                for i in range(n_samples):
+                    t = float(i) / sample_rate
+                    freq = freq1 if t < 0.45 else freq2
+                    envelope = math.sin(math.pi * i / n_samples)
+                    value = int(18000.0 * envelope * math.sin(2.0 * math.pi * freq * t))
+                    packed_sample = struct.pack("<hh", value, value)
+                    wav_file.writeframesraw(packed_sample)
+            return True
+        except Exception as e:
+            logger.error(f"Error generating chime wave: {e}")
+            return False
+
+    async def play_test_tone(self) -> Dict[str, Any]:
+        """Plays a pleasant test audio chime across active speaker/soundbar."""
         def _play():
             env = self._get_audio_env()
             target_sink = self.active_sink_name or "bluez_sink"
@@ -289,44 +316,51 @@ class BluetoothAudioManager:
             except Exception:
                 pass
 
-            # Unmute sink first
+            # Unmute sink and set volume
             try:
                 subprocess.run(["pactl", "set-sink-mute", target_sink, "0"], capture_output=True, env=env)
                 subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
             except Exception:
                 pass
 
-            # 1. Try mpv sine wave synthesizer targeted directly to the sink
+            chime_path = "/tmp/chime.wav"
+            self._generate_chime_wav(chime_path)
+            errors = []
+
+            # 1. Try paplay (PulseAudio / PipeWire Pulse)
+            if shutil.which("paplay"):
+                res = subprocess.run(["paplay", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                if res.returncode == 0:
+                    return {"success": True, "method": "paplay", "sink": target_sink}
+                if res.stderr:
+                    errors.append(f"paplay: {res.stderr.strip()}")
+
+            # 2. Try pw-play (Native PipeWire)
+            if shutil.which("pw-play"):
+                res = subprocess.run(["pw-play", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                if res.returncode == 0:
+                    return {"success": True, "method": "pw-play", "sink": target_sink}
+                if res.stderr:
+                    errors.append(f"pw-play: {res.stderr.strip()}")
+
+            # 3. Try mpv
             if shutil.which("mpv"):
-                try:
-                    cmd = [
-                        "mpv",
-                        "--no-video",
-                        "--ao=pulse,alsa",
-                        f"--audio-device=pulse/{target_sink}" if "bluez" in target_sink else "--ao=pulse,alsa",
-                        f"--volume={self.volume}",
-                        "--length=2.0",
-                        "lavfi://[sine=frequency=440:duration=2.0]"
-                    ]
-                    subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    return True
-                except Exception:
-                    pass
+                res = subprocess.run(["mpv", "--no-video", "--ao=pulse,pipewire,alsa", f"--volume={self.volume}", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                if res.returncode == 0:
+                    return {"success": True, "method": "mpv", "sink": target_sink}
+                if res.stderr:
+                    errors.append(f"mpv: {res.stderr.strip()}")
 
-            # 2. Try paplay or speaker-test
-            try:
-                cmd = ["paplay", f"--device={target_sink}", "/usr/share/sounds/alsa/Front_Center.wav"]
-                subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
-            except Exception:
-                pass
+            # 4. Try aplay (ALSA)
+            if shutil.which("aplay"):
+                res = subprocess.run(["aplay", "-D", "default", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                if res.returncode == 0:
+                    return {"success": True, "method": "aplay", "sink": target_sink}
+                if res.stderr:
+                    errors.append(f"aplay: {res.stderr.strip()}")
 
-            try:
-                cmd = ["speaker-test", "-t", "sine", "-f", "440", "-l", "1", "-p", "1"]
-                subprocess.Popen(cmd, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                return True
-            except Exception:
-                return False
+            return {"success": False, "error": "; ".join(errors) if errors else "No working audio output device found"}
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _play)

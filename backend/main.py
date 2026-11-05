@@ -352,11 +352,10 @@ async def set_bluetooth_volume(payload: Dict[str, int] = Body(...)):
 
 @app.post("/api/bluetooth/test-sound")
 async def test_bluetooth_sound():
-    # Ensure sink is routed to BT
     if bt_mgr.config.target_mac:
         await bt_mgr.switch_to_bluetooth_sink(bt_mgr.config.target_mac)
-    success = await bt_mgr.play_test_tone()
-    return {"status": "ok" if success else "failed"}
+    res = await bt_mgr.play_test_tone()
+    return {"status": "ok" if res.get("success") else "failed", **res}
 
 # Kodi Integration
 @app.get("/api/kodi")
