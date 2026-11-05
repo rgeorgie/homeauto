@@ -26,7 +26,7 @@ function initTuyaCards() {
 async function triggerDeviceScan() {
   const scanBtns = document.querySelectorAll("#btn-scan-devices, #btn-admin-scan-devices");
   scanBtns.forEach(b => {
-    b.textContent = "🔍 Scanning network (5s)...";
+    b.textContent = "🔍 Scanning network (6s)...";
     b.disabled = true;
   });
 
@@ -76,17 +76,19 @@ function showDiscoveredDevicesModal(devices) {
             IP: <code>${escapeHtml(dev.ip || 'Unknown')}</code> &bull; ID: <code>${escapeHtml(dev.id)}</code> &bull; v${dev.version || 3.3}
           </div>
           <div style="font-size: 11px; color: ${hasKey ? 'var(--accent-green)' : 'var(--accent-amber)'}; margin-top: 2px;">
-            ${hasKey ? '🔑 Local Key Available' : '⚠️ No Local Key yet (Enter key or use Cloud sync)'}
+            ${hasKey ? '🔑 Local Key Available' : '⚠️ No Local Key entered (You can add now and enter key later in Admin)'}
           </div>
         </div>
 
-        <div style="display: flex; gap: 8px; align-items: center;">
-          ${!hasKey ? `
-            <input type="text" id="scan-key-input-${idx}" placeholder="Local Key" value="${dev.local_key || ''}" style="width: 130px; padding: 8px 10px; font-size: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.4); color: #fff;">
-          ` : ''}
+        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+          <input type="text" id="scan-key-input-${idx}" placeholder="Local Key (16 char)" value="${dev.local_key || ''}" style="width: 140px; padding: 8px 10px; font-size: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.4); color: #fff;">
           
-          <button class="action-btn" style="padding: 8px 16px; font-size: 13px; background: ${isAdded ? 'rgba(255,255,255,0.1)' : 'var(--accent-blue)'};" onclick="importSingleDiscoveredDevice(${idx})">
-            ${isAdded ? '🔄 Update' : '➕ Add to Dashboard'}
+          <button class="action-btn" style="padding: 8px 14px; font-size: 13px; background: ${isAdded ? 'rgba(255,255,255,0.1)' : 'var(--accent-blue)'};" onclick="importSingleDiscoveredDevice(${idx})">
+            ${isAdded ? '🔄 Update' : '➕ Add'}
+          </button>
+
+          <button class="action-btn" style="padding: 8px 12px; font-size: 12px; background: rgba(255,255,255,0.08);" onclick="openAddDeviceWithPrefill(${idx})">
+            ✏️
           </button>
         </div>
       </div>
@@ -94,6 +96,39 @@ function showDiscoveredDevicesModal(devices) {
   }).join("");
 
   modal.style.display = "flex";
+}
+
+function openAddDeviceWithPrefill(index) {
+  const dev = discoveredDevicesCache[index];
+  if (!dev) return;
+
+  const modalScan = document.getElementById("modal-scan-results");
+  if (modalScan) modalScan.style.display = "none";
+
+  editingDeviceId = null;
+  const modalTitle = document.getElementById("modal-device-title");
+  if (modalTitle) modalTitle.textContent = `Configure Discovered Device: ${dev.name}`;
+
+  const idInput = document.getElementById("device-id");
+  const nameInput = document.getElementById("device-name");
+  const ipInput = document.getElementById("device-ip");
+  const keyInput = document.getElementById("device-key");
+  const verInput = document.getElementById("device-version");
+  const typeInput = document.getElementById("device-type");
+  const roomInput = document.getElementById("device-room");
+  const resEl = document.getElementById("device-test-result");
+
+  if (idInput) idInput.value = dev.id || "";
+  if (nameInput) nameInput.value = dev.name || "";
+  if (ipInput) ipInput.value = dev.ip || "";
+  if (keyInput) keyInput.value = dev.local_key || "";
+  if (verInput) verInput.value = dev.version || "3.3";
+  if (typeInput) typeInput.value = dev.type || "switch";
+  if (roomInput) roomInput.value = dev.room || "Living Room";
+  if (resEl) resEl.textContent = "";
+
+  const modalForm = document.getElementById("modal-device-form");
+  if (modalForm) modalForm.style.display = "flex";
 }
 
 async function importSingleDiscoveredDevice(index) {
@@ -112,13 +147,18 @@ async function importSingleDiscoveredDevice(index) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ devices: [dev] })
     });
+    const data = await res.json();
     if (res.ok) {
-      showToast(`🎉 ${dev.name} added to your dashboard!`);
+      showToast(`🎉 ${dev.name} added to dashboard!`);
       dev.is_configured = true;
+      if (data.devices) {
+        state.devices = data.devices;
+        renderTuyaDevices(state.devices);
+      }
       showDiscoveredDevicesModal(discoveredDevicesCache);
       if (typeof loadAdminConfig === "function") loadAdminConfig();
     } else {
-      showToast("Failed to add device");
+      showToast(`Failed: ${data.detail || 'Could not add device'}`);
     }
   } catch (err) {
     showToast(`Error: ${err.message}`);
@@ -145,11 +185,21 @@ async function importAllDiscoveredDevices() {
     });
     const data = await res.json();
     if (res.ok) {
-      showToast(`🎉 Imported ${data.imported_count} devices! Displaying on dashboard.`);
+      showToast(`🎉 Imported ${data.imported_count || discoveredDevicesCache.length} devices! Displaying on screen.`);
       document.getElementById("modal-scan-results").style.display = "none";
+      if (data.devices) {
+        state.devices = data.devices;
+        renderTuyaDevices(state.devices);
+      } else {
+        const devRes = await fetch("/api/devices");
+        if (devRes.ok) {
+          state.devices = await devRes.json();
+          renderTuyaDevices(state.devices);
+        }
+      }
       if (typeof loadAdminConfig === "function") loadAdminConfig();
     } else {
-      showToast("Error importing devices batch");
+      showToast(`Error: ${data.detail || 'Batch import failed'}`);
     }
   } catch (err) {
     showToast(`Import error: ${err.message}`);
@@ -192,7 +242,15 @@ function renderTuyaDevices(devices) {
 function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
   const icon = isLight ? "💡" : (dev.type === "socket" ? "🔌" : (dev.type === "climate" ? "🌡️" : "⚡"));
-  const statusBadge = dev.online ? `<span style="color: var(--accent-green); font-size: 12px;">● Online</span>` : `<span style="color: var(--text-muted); font-size: 12px;">○ Offline</span>`;
+  
+  let statusBadge = `<span style="color: var(--accent-green); font-size: 12px;">● Online</span>`;
+  if (!dev.online) {
+    if (dev.error && dev.error.includes("Local key")) {
+      statusBadge = `<span style="color: var(--accent-amber); font-size: 12px;">⚠️ Key Required</span>`;
+    } else {
+      statusBadge = `<span style="color: var(--text-muted); font-size: 12px;">○ Offline</span>`;
+    }
+  }
 
   return `
     <div class="card" id="card-${dev.id}">

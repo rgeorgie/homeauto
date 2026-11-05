@@ -217,10 +217,18 @@ async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
 
     save_config(config)
     tuya_mgr.reload_config(config.tuya)
+    new_states = await tuya_mgr.get_all_states()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": {
+            "devices": new_states
+        }
+    })
     return {
         "status": "ok",
         "imported_count": imported_count,
-        "total_devices": len(config.tuya.devices)
+        "total_devices": len(config.tuya.devices),
+        "devices": new_states
     }
 
 @app.post("/api/devices/test")
@@ -456,6 +464,13 @@ async def add_config_device(device_data: Dict[str, Any] = Body(...)):
         config.tuya.devices.append(dev)
         save_config(config)
         tuya_mgr.reload_config(config.tuya)
+        new_states = await tuya_mgr.get_all_states()
+        await ws_manager.broadcast({
+            "type": "state_update",
+            "data": {
+                "devices": new_states
+            }
+        })
         return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
     except HTTPException:
         raise
@@ -479,6 +494,13 @@ async def update_config_device(device_id: str, device_data: Dict[str, Any] = Bod
         
         save_config(config)
         tuya_mgr.reload_config(config.tuya)
+        new_states = await tuya_mgr.get_all_states()
+        await ws_manager.broadcast({
+            "type": "state_update",
+            "data": {
+                "devices": new_states
+            }
+        })
         return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
     except HTTPException:
         raise
@@ -491,6 +513,13 @@ async def delete_config_device(device_id: str):
     config.tuya.devices = [d for d in config.tuya.devices if d.id != device_id]
     save_config(config)
     tuya_mgr.reload_config(config.tuya)
+    new_states = await tuya_mgr.get_all_states()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": {
+            "devices": new_states
+        }
+    })
     return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
 
 # Frontend Static Files Mount

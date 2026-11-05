@@ -50,6 +50,21 @@ class TuyaManager:
 
     def add_local_device(self, dev_conf: TuyaDeviceConfig):
         try:
+            # Always register device state template so it displays on the UI
+            self.device_states[dev_conf.id] = {
+                "id": dev_conf.id,
+                "name": dev_conf.name,
+                "type": dev_conf.type,
+                "room": dev_conf.room,
+                "ip": dev_conf.ip,
+                "local_key": dev_conf.local_key,
+                "online": False,
+                "is_on": False,
+                "brightness": 100,
+                "dps": {},
+                "error": None if (dev_conf.ip and dev_conf.local_key) else "Local key required"
+            }
+
             if dev_conf.ip and dev_conf.local_key:
                 if dev_conf.type in ["light", "bulb"]:
                     device = tinytuya.BulbDevice(
@@ -67,20 +82,9 @@ class TuyaManager:
                     )
                 device.set_socketPersistent(False)
                 self.local_devices[dev_conf.id] = device
-                
-                # Pre-populate device state template
-                self.device_states[dev_conf.id] = {
-                    "id": dev_conf.id,
-                    "name": dev_conf.name,
-                    "type": dev_conf.type,
-                    "room": dev_conf.room,
-                    "online": False,
-                    "is_on": False,
-                    "brightness": 100,
-                    "dps": {},
-                    "error": None
-                }
                 logger.info(f"Registered local Tuya device: {dev_conf.name} ({dev_conf.id})")
+            else:
+                logger.info(f"Registered Tuya device placeholder (pending local key): {dev_conf.name} ({dev_conf.id})")
         except Exception as e:
             logger.error(f"Error registering local Tuya device {dev_conf.name}: {e}")
 
