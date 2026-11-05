@@ -307,7 +307,7 @@ class BluetoothAudioManager:
         """Plays a pleasant test audio chime across active speaker/soundbar."""
         def _play():
             env = self._get_audio_env()
-            target_sink = self.active_sink_name or "bluez_sink"
+            target_sink = self.active_sink_name or "bluez_output.88_57_1D_F0_60_80.1"
             
             # Find exact sink name if available
             try:
@@ -321,11 +321,13 @@ class BluetoothAudioManager:
             except Exception:
                 pass
 
-            # Unmute sink and set volume
+            # Unmute sink and set volume on both target sink and default sink
             try:
                 subprocess.run(["pactl", "set-sink-mute", target_sink, "0"], capture_output=True, env=env)
                 subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
                 subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{self.volume}%"], capture_output=True, env=env)
             except Exception:
                 pass
 
@@ -333,18 +335,22 @@ class BluetoothAudioManager:
             self._generate_chime_wav(chime_path)
             errors = []
 
-            # 1. Try paplay (PulseAudio / PipeWire Pulse)
+            logger.info(f"Playing test chime on soundbar (sink: {target_sink}, volume: {self.volume}%)")
+
+            # 1. Try paplay
             if shutil.which("paplay"):
                 res = subprocess.run(["paplay", chime_path], capture_output=True, text=True, timeout=4, env=env)
                 if res.returncode == 0:
+                    logger.info("Test chime succeeded via paplay")
                     return {"success": True, "method": "paplay", "sink": target_sink}
                 if res.stderr:
                     errors.append(f"paplay: {res.stderr.strip()}")
 
-            # 2. Try pw-play (Native PipeWire)
+            # 2. Try pw-play
             if shutil.which("pw-play"):
                 res = subprocess.run(["pw-play", chime_path], capture_output=True, text=True, timeout=4, env=env)
                 if res.returncode == 0:
+                    logger.info("Test chime succeeded via pw-play")
                     return {"success": True, "method": "pw-play", "sink": target_sink}
                 if res.stderr:
                     errors.append(f"pw-play: {res.stderr.strip()}")
@@ -353,18 +359,21 @@ class BluetoothAudioManager:
             if shutil.which("mpv"):
                 res = subprocess.run(["mpv", "--no-video", "--ao=pulse,pipewire,alsa", f"--volume={self.volume}", chime_path], capture_output=True, text=True, timeout=4, env=env)
                 if res.returncode == 0:
+                    logger.info("Test chime succeeded via mpv")
                     return {"success": True, "method": "mpv", "sink": target_sink}
                 if res.stderr:
                     errors.append(f"mpv: {res.stderr.strip()}")
 
-            # 4. Try aplay (ALSA)
+            # 4. Try aplay
             if shutil.which("aplay"):
                 res = subprocess.run(["aplay", "-D", "default", chime_path], capture_output=True, text=True, timeout=4, env=env)
                 if res.returncode == 0:
+                    logger.info("Test chime succeeded via aplay")
                     return {"success": True, "method": "aplay", "sink": target_sink}
                 if res.stderr:
                     errors.append(f"aplay: {res.stderr.strip()}")
 
+            logger.warning(f"Test chime failed: {'; '.join(errors)}")
             return {"success": False, "error": "; ".join(errors) if errors else "No working audio output device found"}
 
         loop = asyncio.get_event_loop()

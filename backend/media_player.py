@@ -122,6 +122,10 @@ class MediaPlayer:
                             pass
 
                     log_file = open("/tmp/mpv.log", "w")
+                    play_url = url_or_preset
+                    if not play_url.startswith("http://") and not play_url.startswith("https://") and not play_url.startswith("ytdl://") and not os.path.exists(play_url):
+                        play_url = f"ytdl://ytsearch:{play_url}"
+
                     cmd = [
                         "mpv",
                         "--no-video",
@@ -135,7 +139,7 @@ class MediaPlayer:
                         "--ytdl=yes",
                         "--ytdl-format=bestaudio/best",
                         "--gapless-audio=yes",
-                        url_or_preset
+                        play_url
                     ]
                     self._mpv_process = subprocess.Popen(
                         cmd,
