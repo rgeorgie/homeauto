@@ -256,6 +256,12 @@ async def sync_tuya_cloud_keys():
         })
     return result
 
+# Kodi JSON-RPC Proxy / Catch-all to prevent 405 Method Not Allowed
+@app.post("/jsonrpc")
+@app.get("/jsonrpc")
+async def jsonrpc_endpoint(payload: Dict[str, Any] = Body(default={})):
+    return {"jsonrpc": "2.0", "result": "pong", "id": payload.get("id", 1)}
+
 # Bluetooth Surround Sound
 @app.get("/api/bluetooth")
 async def get_bluetooth_status():
