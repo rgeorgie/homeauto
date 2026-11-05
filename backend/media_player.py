@@ -145,8 +145,6 @@ class MediaPlayer:
                         f"--input-ipc-server={MPV_IPC_SOCK}",
                         f"--volume={self.volume}",
                         "--network-timeout=15",
-                        "--reconnect=yes",
-                        "--reconnect-stream-max-retries=10",
                         "--ytdl=yes",
                         "--ytdl-format=bestaudio/best"
                     ]
