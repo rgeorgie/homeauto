@@ -79,7 +79,7 @@ class KodiManager:
                     return data.get("result")
                 self.last_error = f"Kodi HTTP {res.status_code} at {self.rpc_url} (check username/password)"
             except Exception as e:
-                self.last_error = f"Cannot reach Kodi at {self.rpc_url}: {e.__class__.__name__}"
+                self.last_error = f"HomeAuto server cannot reach Kodi at {self.config.host}:{self.config.port} (is Kodi running with its web server enabled?)"
                 logger.debug(f"Kodi JSON-RPC request error ({method}): {e}")
             return None
 
@@ -157,23 +157,51 @@ class KodiManager:
             return res == "OK" or res is not None
         return False
 
+    KODI_PROCESS_NAMES = ["kodi", "kodi.bin", "kodi-x11", "kodi-wayland", "kodi-gbm", "kodi-standalone"]
+
+    def _kodi_running(self) -> bool:
+        return any(subprocess.run(["pgrep", "-x", n], capture_output=True).returncode == 0 for n in self.KODI_PROCESS_NAMES)
+
+    def _ping_sync(self) -> bool:
+        try:
+            res = requests.post(self.rpc_url, json={"jsonrpc": "2.0", "method": "JSONRPC.Ping", "id": 1}, auth=self.auth, timeout=1.5)
+            return res.status_code == 200 and res.json().get("result") == "pong"
+        except Exception:
+            return False
+
     async def launch_kodi(self) -> bool:
-        """Starts Kodi process on local display if installed."""
+        """Starts Kodi on the local display, then verifies its JSON-RPC web server answers. Sets last_error on failure."""
         def _launch():
+            import os, time
             try:
-                # Check if already running
-                check = subprocess.run(["pgrep", "-x", "kodi.bin"], capture_output=True)
-                if check.returncode == 0:
-                    logger.info("Kodi is already running.")
-                    return True
-                
-                # Launch via background subprocess
-                cmd = self.config.launch_command.split()
-                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                logger.info(f"Launched Kodi via command: {self.config.launch_command}")
-                return True
+                if not self._kodi_running():
+                    env = os.environ.copy()
+                    env.setdefault("DISPLAY", ":0")
+                    env.setdefault("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+                    if "WAYLAND_DISPLAY" not in env and os.path.exists(f"{env['XDG_RUNTIME_DIR']}/wayland-0"):
+                        env["WAYLAND_DISPLAY"] = "wayland-0"
+                    log_path = "/tmp/homeauto-kodi.log"
+                    with open(log_path, "ab") as log:
+                        subprocess.Popen(self.config.launch_command.split(), stdout=log, stderr=log, env=env, start_new_session=True)
+                    logger.info(f"Launched Kodi via command: {self.config.launch_command} (output: {log_path})")
+
+                # Wait for Kodi's web server (startup can take a while on a Pi)
+                for _ in range(20):
+                    if self._ping_sync():
+                        self.last_error = ""
+                        return True
+                    time.sleep(1)
+
+                if self._kodi_running():
+                    self.last_error = (f"Kodi is running but its web server does not answer at {self.config.host}:{self.config.port}. "
+                                       "In Kodi: Settings > Services > Control > enable 'Allow remote control via HTTP' and match the port/username/password in HomeAuto Settings")
+                else:
+                    self.last_error = f"Kodi did not start with '{self.config.launch_command}'. See /tmp/homeauto-kodi.log on the HomeAuto device"
+                logger.warning(self.last_error)
+                return False
             except Exception as e:
-                logger.error(f"Failed to launch Kodi: {e}")
+                self.last_error = f"Failed to launch Kodi: {e}"
+                logger.error(self.last_error)
                 return False
 
         loop = asyncio.get_event_loop()

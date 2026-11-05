@@ -402,8 +402,7 @@ async def kodi_input(payload: Dict[str, str] = Body(...)):
 
 @app.post("/api/kodi/launch")
 async def kodi_launch():
-    success = await kodi_mgr.launch_kodi()
-    return {"status": "ok" if success else "failed"}
+    return _kodi_result(await kodi_mgr.launch_kodi())
 
 @app.post("/api/kodi/quit")
 async def kodi_quit():

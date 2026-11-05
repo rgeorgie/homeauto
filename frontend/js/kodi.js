@@ -7,19 +7,11 @@ function initKodiController() {
 
   if (launchBtn) {
     launchBtn.addEventListener("click", async () => {
-      launchBtn.textContent = "Launching Kodi...";
-      try {
-        const res = await fetch("/api/kodi/launch", { method: "POST" });
-        if (res.ok) {
-          showToast("Kodi started successfully");
-        } else {
-          showToast("Failed to launch Kodi");
-        }
-      } catch (e) {
-        showToast("Error starting Kodi");
-      } finally {
-        launchBtn.textContent = "🎬 Launch Kodi on TV/Screen";
-      }
+      launchBtn.textContent = "Launching Kodi (up to 20s)...";
+      launchBtn.disabled = true;
+      if (await kodiPost("/api/kodi/launch")) showToast("Kodi started and responding");
+      launchBtn.textContent = "🎬 Launch Kodi on TV/Screen";
+      launchBtn.disabled = false;
     });
   }
 
