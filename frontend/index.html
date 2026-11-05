@@ -56,6 +56,9 @@
     <button class="nav-btn" data-view="system">
       <span>⚙️</span> System
     </button>
+    <button class="nav-btn" data-view="admin" style="border-color: rgba(96, 165, 250, 0.4); color: #93c5fd;">
+      <span>🛠️</span> Admin Setup
+    </button>
   </nav>
 
   <!-- Main View Container -->
@@ -302,7 +305,429 @@
       </div>
     </section>
 
+    <!-- VIEW 7: ADMIN SETUP & CONFIGURATION PANEL -->
+    <section id="view-admin" class="view-section">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h2 style="font-size: 24px; font-weight: 700;">🛠️ Admin Setup & Control Center</h2>
+          <p style="color: var(--text-muted); font-size: 14px;">Configure devices, Bluetooth audio, Kodi, screensaver streams, and platform settings</p>
+        </div>
+        <button class="action-btn" id="btn-save-all-config" style="background: linear-gradient(135deg, #10b981, #059669); font-size: 15px;">
+          💾 Save All Configuration & Apply
+        </button>
+      </div>
+
+      <!-- Admin Sub-Navigation Tabs -->
+      <div class="admin-tabs">
+        <button class="admin-tab-btn active" data-tab="devices">💡 SmartLife / Tuya Devices</button>
+        <button class="admin-tab-btn" data-tab="bluetooth">🔊 Bluetooth Surround</button>
+        <button class="admin-tab-btn" data-tab="kodi">🎬 Kodi Integration</button>
+        <button class="admin-tab-btn" data-tab="screensaver">🖼️ Screensaver & YouTube</button>
+        <button class="admin-tab-btn" data-tab="weather">🌤️ Weather & Location</button>
+        <button class="admin-tab-btn" data-tab="server">⚙️ Server & Network</button>
+      </div>
+
+      <!-- SUBTAB 1: DEVICES SETUP -->
+      <div id="admin-subview-devices" class="admin-subview active">
+        <div class="card" style="margin-bottom: 24px;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Configured SmartLife / Tuya Devices</div>
+              <div class="card-subtitle">Manage switches, dimmers, smart panels, and sockets</div>
+            </div>
+            <button class="action-btn" id="btn-admin-add-device">
+              + Add New Device
+            </button>
+          </div>
+
+          <div style="overflow-x: auto;">
+            <table class="admin-table">
+              <thead>
+                <tr>
+                  <th>Device Name</th>
+                  <th>Device ID</th>
+                  <th>IP Address</th>
+                  <th>Type</th>
+                  <th>Room</th>
+                  <th>Version</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-devices-tbody">
+                <!-- Rendered by admin.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tuya Cloud Credentials Setup Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Tuya Cloud API Credentials (Optional)</div>
+              <div class="card-subtitle">Used for cloud device synchronization and discovery (iot.tuya.com)</div>
+            </div>
+            <div class="card-icon">☁️</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px;">
+            <div class="form-group">
+              <label class="form-label">Access ID (Client ID)</label>
+              <input type="text" id="tuya-cloud-id" class="form-input" placeholder="Your Tuya Access ID">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Access Secret</label>
+              <input type="password" id="tuya-cloud-secret" class="form-input" placeholder="Your Tuya Access Secret">
+            </div>
+            <div class="form-group">
+              <label class="form-label">Region Endpoint</label>
+              <select id="tuya-cloud-endpoint" class="form-select">
+                <option value="https://openapi.tuyaeu.com">Europe (https://openapi.tuyaeu.com)</option>
+                <option value="https://openapi.tuyaus.com">Americas (https://openapi.tuyaus.com)</option>
+                <option value="https://openapi.tuyacn.com">China (https://openapi.tuyacn.com)</option>
+                <option value="https://openapi.tuyain.com">India (https://openapi.tuyain.com)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="form-label">SmartLife User ID / UID (Optional)</label>
+              <input type="text" id="tuya-cloud-uid" class="form-input" placeholder="SmartLife App UID">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 2: BLUETOOTH SETUP -->
+      <div id="admin-subview-bluetooth" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Bluetooth Surround Sound Settings</div>
+            <div class="card-icon">🔊</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px;">
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="bt-enabled" style="width: 18px; height: 18px;">
+                <span>Enable Bluetooth Audio Routing</span>
+              </label>
+              <div class="form-hint">Automatically pairs and routes system audio to Bluetooth speakers</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Target Soundbar / Speaker MAC Address</label>
+              <input type="text" id="bt-mac" class="form-input" placeholder="00:11:22:33:44:55">
+              <div class="form-hint">MAC address of your Bluetooth surround sound system</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Speaker Display Name</label>
+              <input type="text" id="bt-name" class="form-input" placeholder="Surround Soundbar">
+            </div>
+
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="bt-auto-reconnect" style="width: 18px; height: 18px;">
+                <span>Auto-Reconnect Supervisor</span>
+              </label>
+              <div class="form-hint">Constantly monitor and reconnect if Bluetooth drops</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Reconnect Check Interval (seconds)</label>
+              <input type="number" id="bt-interval" class="form-input" value="15" min="5" max="300">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Startup Volume (%)</label>
+              <input type="number" id="bt-default-vol" class="form-input" value="70" min="0" max="100">
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 3: KODI SETUP -->
+      <div id="admin-subview-kodi" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Kodi JSON-RPC & Launcher Settings</div>
+            <div class="card-icon">🎬</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="kodi-enabled" style="width: 18px; height: 18px;">
+                <span>Enable Kodi Media Center Integration</span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Kodi Host / IP</label>
+              <input type="text" id="kodi-host" class="form-input" value="127.0.0.1">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Kodi Webserver Port</label>
+              <input type="number" id="kodi-port" class="form-input" value="8080">
+              <div class="form-hint">Configured in Kodi Settings &gt; Services &gt; Control &gt; Allow control via HTTP</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Kodi Username</label>
+              <input type="text" id="kodi-user" class="form-input" value="kodi">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Kodi Password</label>
+              <input type="password" id="kodi-pass" class="form-input" placeholder="Password (if set)">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Pi Launch Command</label>
+              <input type="text" id="kodi-cmd" class="form-input" value="kodi-standalone">
+            </div>
+          </div>
+
+          <div style="margin-top: 14px; display: flex; align-items: center; gap: 14px;">
+            <button class="action-btn" id="btn-test-kodi-config" type="button" style="background: rgba(255,255,255,0.08);">
+              🔍 Test Kodi Connection (Ping)
+            </button>
+            <span id="kodi-test-result" style="font-size: 14px;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 4: SCREENSAVER & YOUTUBE -->
+      <div id="admin-subview-screensaver" class="admin-subview">
+        <div class="card" style="margin-bottom: 20px;">
+          <div class="card-header">
+            <div class="card-title">Screensaver & Ambient Carousel</div>
+            <div class="card-icon">🖼️</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="ss-enabled" style="width: 18px; height: 18px;">
+                <span>Enable Inactivity Screensaver</span>
+              </label>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Idle Inactivity Timeout (seconds)</label>
+              <input type="number" id="ss-idle" class="form-input" value="120" min="10" max="3600">
+              <div class="form-hint">Time of touch inactivity before screensaver triggers</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Photo Slide Interval (seconds)</label>
+              <input type="number" id="ss-transition" class="form-input" value="15" min="3" max="120">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Local Photos Directory</label>
+              <input type="text" id="ss-photo-dir" class="form-input" value="./frontend/assets/photos">
+            </div>
+
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="ss-unsplash" style="width: 18px; height: 18px;">
+                <span>Use HD Nature Wallpapers (Unsplash)</span>
+              </label>
+              <div class="form-hint">Provides high-resolution ambient wallpapers if local folder is empty</div>
+            </div>
+          </div>
+
+          <h4 style="margin: 18px 0 10px; font-size: 15px;">Screensaver Glanceable Overlay Cards:</h4>
+          <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="ss-w-clock" checked>
+              <span>Clock & Date</span>
+            </label>
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="ss-w-weather" checked>
+              <span>Weather</span>
+            </label>
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="ss-w-devices" checked>
+              <span>Active Devices Count</span>
+            </label>
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="ss-w-telemetry" checked>
+              <span>Pi CPU Temp</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- YouTube Audio Preset Streams -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">YouTube Background Audio Streams</div>
+              <div class="card-subtitle">Streams available for one-touch play on touchscreen and screensaver</div>
+            </div>
+            <button class="action-btn" id="btn-add-yt-preset">
+              + Add YouTube Stream
+            </button>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="ss-yt-autoplay">
+                <span>Auto-play audio when screensaver starts</span>
+              </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Audio Volume (%)</label>
+              <input type="number" id="ss-yt-vol" class="form-input" value="50" min="0" max="100">
+            </div>
+          </div>
+
+          <div id="admin-yt-presets-list">
+            <!-- Rendered by admin.js -->
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 5: WEATHER & LOCATION -->
+      <div id="admin-subview-weather" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Weather Widget Settings</div>
+              <div class="card-subtitle">Powered by Open-Meteo (free API with zero API key required)</div>
+            </div>
+            <div class="card-icon">🌤️</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+            <div class="form-group">
+              <label class="form-label">Latitude</label>
+              <input type="number" step="0.0001" id="weather-lat" class="form-input" value="51.5074">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Longitude</label>
+              <input type="number" step="0.0001" id="weather-lon" class="form-input" value="-0.1278">
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Temperature Units</label>
+              <select id="weather-units" class="form-select">
+                <option value="celsius">Celsius (°C)</option>
+                <option value="fahrenheit">Fahrenheit (°F)</option>
+              </select>
+            </div>
+          </div>
+
+          <div style="margin-top: 10px;">
+            <button class="action-btn" id="btn-detect-location" type="button" style="background: rgba(255,255,255,0.08);">
+              📍 Auto-Detect Location
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 6: SERVER & SYSTEM -->
+      <div id="admin-subview-server" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">Server Host & Port Configuration</div>
+            <div class="card-icon">⚙️</div>
+          </div>
+
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px;">
+            <div class="form-group">
+              <label class="form-label">Listen Host</label>
+              <input type="text" id="server-host" class="form-input" value="0.0.0.0">
+              <div class="form-hint">0.0.0.0 exposes to entire local Wi-Fi / Ethernet</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">HTTP Web Port</label>
+              <input type="number" id="server-port" class="form-input" value="8080">
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
+
+  <!-- Add / Edit Device Modal -->
+  <div id="modal-device-form" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h3 id="modal-device-title" style="font-size: 20px; font-weight: 700;">Add SmartLife / Tuya Device</h3>
+        <button id="btn-close-device-modal" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer;">&times;</button>
+      </div>
+
+      <form id="form-device">
+        <div class="form-group">
+          <label class="form-label">Device Name *</label>
+          <input type="text" id="device-name" class="form-input" placeholder="e.g. Living Room Smart Panel" required>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label class="form-label">Device ID *</label>
+            <input type="text" id="device-id" class="form-input" placeholder="bf0123456789abcdef" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">IP Address (Local Network)</label>
+            <input type="text" id="device-ip" class="form-input" placeholder="192.168.1.150">
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label class="form-label">Local Key (16 chars)</label>
+            <input type="text" id="device-key" class="form-input" placeholder="0123456789abcdef">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Tuya Protocol</label>
+            <select id="device-version" class="form-select">
+              <option value="3.3">v3.3 (Standard)</option>
+              <option value="3.4">v3.4 (Newer)</option>
+              <option value="3.5">v3.5</option>
+              <option value="3.1">v3.1 (Legacy)</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label class="form-label">Device Category / Type</label>
+            <select id="device-type" class="form-select">
+              <option value="switch">Switch / Smart Panel Relay</option>
+              <option value="light">Light / Dimmable Bulb</option>
+              <option value="socket">Socket / Smart Plug</option>
+              <option value="climate">Climate / Thermostat</option>
+              <option value="sensor">Sensor</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Room / Zone</label>
+            <input type="text" id="device-room" class="form-input" placeholder="Living Room">
+          </div>
+        </div>
+
+        <div style="margin: 16px 0; display: flex; align-items: center; justify-content: space-between;">
+          <button type="button" class="action-btn" id="btn-test-device-form" style="background: rgba(255,255,255,0.08); font-size: 13px;">
+            ⚡ Test Local Connection
+          </button>
+          <span id="device-test-result" style="font-size: 12px;"></span>
+        </div>
+
+        <div style="display: flex; gap: 12px; margin-top: 24px;">
+          <button type="submit" class="action-btn" style="flex: 1; justify-content: center; background: var(--accent-blue);">
+            Save Device
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
 
   <!-- Fullscreen Ambient Screensaver Overlay -->
   <div id="screensaver-overlay">
@@ -365,5 +790,6 @@
   <script src="/js/screensaver.js"></script>
   <script src="/js/kodi.js"></script>
   <script src="/js/bt_audio.js"></script>
+  <script src="/js/admin.js"></script>
 </body>
 </html>

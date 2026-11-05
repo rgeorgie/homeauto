@@ -10,8 +10,34 @@ logger = logging.getLogger("HomeAuto.Kodi")
 class KodiManager:
     def __init__(self, config: KodiConfig):
         self.config = config
+        self._update_url()
+
+    def _update_url(self):
         self.rpc_url = f"http://{self.config.host}:{self.config.port}/jsonrpc"
         self.auth = (self.config.user, self.config.password) if self.config.user else None
+
+    def reload_config(self, config: KodiConfig):
+        self.config = config
+        self._update_url()
+        logger.info("KodiManager configuration reloaded.")
+
+    async def test_connection(self, host: str, port: int, user: str = "", password: str = "") -> Dict[str, Any]:
+        """Tests connection to Kodi JSON-RPC."""
+        test_url = f"http://{host}:{port}/jsonrpc"
+        auth = (user, password) if user else None
+        payload = {"jsonrpc": "2.0", "method": "JSONRPC.Ping", "id": 1}
+
+        def _ping():
+            try:
+                res = requests.post(test_url, json=payload, auth=auth, timeout=3)
+                if res.status_code == 200 and res.json().get("result") == "pong":
+                    return {"success": True}
+                return {"success": False, "error": f"HTTP {res.status_code}: {res.text}"}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _ping)
 
     async def send_rpc(self, method: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Sends a JSON-RPC request to Kodi."""

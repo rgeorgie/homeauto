@@ -23,6 +23,10 @@ class MediaPlayer:
             'extract_flat': False
         }
 
+    def reload_config(self, config: YouTubeAudioConfig):
+        self.config = config
+        self.volume = self.config.volume
+
     async def get_stream_url(self, youtube_url: str) -> Optional[Dict[str, str]]:
         """Resolves a YouTube URL to a direct audio stream URL and title."""
         def _extract():

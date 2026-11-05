@@ -1,0 +1,479 @@
+// Admin Web Panel Controller
+
+let adminConfig = null;
+let editingDeviceId = null;
+
+document.addEventListener("DOMContentLoaded", () => {
+  initAdminPanel();
+});
+
+function initAdminPanel() {
+  const adminTabBtns = document.querySelectorAll(".admin-tab-btn");
+  adminTabBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      adminTabBtns.forEach(b => b.classList.remove("active"));
+      document.querySelectorAll(".admin-subview").forEach(v => v.classList.remove("active"));
+
+      btn.classList.add("active");
+      const target = document.getElementById(`admin-subview-${btn.dataset.tab}`);
+      if (target) target.classList.add("active");
+    });
+  });
+
+  // Load config on startup
+  loadAdminConfig();
+
+  // Save full config button
+  const saveAllBtn = document.getElementById("btn-save-all-config");
+  if (saveAllBtn) {
+    saveAllBtn.addEventListener("click", () => saveFullConfig());
+  }
+
+  // Add Device Modal triggers
+  const btnAddDevice = document.getElementById("btn-admin-add-device");
+  const modalDevice = document.getElementById("modal-device-form");
+  const btnCloseModal = document.getElementById("btn-close-device-modal");
+  const formDevice = document.getElementById("form-device");
+  const btnTestDevice = document.getElementById("btn-test-device-form");
+
+  if (btnAddDevice && modalDevice) {
+    btnAddDevice.addEventListener("click", () => {
+      editingDeviceId = null;
+      document.getElementById("modal-device-title").textContent = "Add SmartLife / Tuya Device";
+      formDevice.reset();
+      document.getElementById("device-version").value = "3.3";
+      document.getElementById("device-test-result").textContent = "";
+      modalDevice.style.display = "flex";
+    });
+  }
+
+  if (btnCloseModal && modalDevice) {
+    btnCloseModal.addEventListener("click", () => {
+      modalDevice.style.display = "none";
+    });
+  }
+
+  if (btnTestDevice) {
+    btnTestDevice.addEventListener("click", async () => {
+      const devId = document.getElementById("device-id").value.trim();
+      const ip = document.getElementById("device-ip").value.trim();
+      const localKey = document.getElementById("device-key").value.trim();
+      const version = parseFloat(document.getElementById("device-version").value || "3.3");
+
+      const resEl = document.getElementById("device-test-result");
+      resEl.textContent = "Testing local connection...";
+      resEl.style.color = "var(--text-muted)";
+
+      try {
+        const res = await fetch("/api/devices/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: devId, ip, local_key: localKey, version })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resEl.textContent = `✅ Connected successfully! (DPS: ${JSON.stringify(data.dps)})`;
+          resEl.style.color = "var(--accent-green)";
+        } else {
+          resEl.textContent = `❌ Connection failed: ${data.error || 'Device not reachable'}`;
+          resEl.style.color = "var(--accent-red)";
+        }
+      } catch (err) {
+        resEl.textContent = `❌ Request error: ${err.message}`;
+        resEl.style.color = "var(--accent-red)";
+      }
+    });
+  }
+
+  if (formDevice) {
+    formDevice.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const devData = {
+        id: document.getElementById("device-id").value.trim(),
+        name: document.getElementById("device-name").value.trim(),
+        ip: document.getElementById("device-ip").value.trim(),
+        local_key: document.getElementById("device-key").value.trim(),
+        version: parseFloat(document.getElementById("device-version").value || "3.3"),
+        type: document.getElementById("device-type").value,
+        room: document.getElementById("device-room").value.trim() || "Default"
+      };
+
+      try {
+        let res;
+        if (editingDeviceId) {
+          res = await fetch(`/api/config/devices/${editingDeviceId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(devData)
+          });
+        } else {
+          res = await fetch("/api/config/devices", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(devData)
+          });
+        }
+
+        if (res.ok) {
+          showToast(editingDeviceId ? "Device updated successfully" : "Device added successfully");
+          modalDevice.style.display = "none";
+          await loadAdminConfig();
+        } else {
+          const err = await res.json();
+          showToast(`Error: ${err.detail || 'Failed to save device'}`);
+        }
+      } catch (err) {
+        showToast(`Save error: ${err.message}`);
+      }
+    });
+  }
+
+  // Location Auto-Detect
+  const btnDetectLoc = document.getElementById("btn-detect-location");
+  if (btnDetectLoc) {
+    btnDetectLoc.addEventListener("click", async () => {
+      btnDetectLoc.textContent = "Detecting...";
+      try {
+        const res = await fetch("/api/weather/detect-location", { method: "POST" });
+        const data = await res.json();
+        if (data.success) {
+          document.getElementById("weather-lat").value = data.latitude;
+          document.getElementById("weather-lon").value = data.longitude;
+          showToast(`Location detected: ${data.city}, ${data.country} (${data.latitude}, ${data.longitude})`);
+        } else {
+          showToast("Could not auto-detect location");
+        }
+      } catch (e) {
+        showToast("Error detecting location");
+      } finally {
+        btnDetectLoc.textContent = "📍 Auto-Detect Location";
+      }
+    });
+  }
+
+  // Test Kodi JSON-RPC
+  const btnTestKodi = document.getElementById("btn-test-kodi-config");
+  if (btnTestKodi) {
+    btnTestKodi.addEventListener("click", async () => {
+      const host = document.getElementById("kodi-host").value.trim();
+      const port = parseInt(document.getElementById("kodi-port").value || "8080");
+      const user = document.getElementById("kodi-user").value.trim();
+      const pass = document.getElementById("kodi-pass").value.trim();
+
+      const resEl = document.getElementById("kodi-test-result");
+      resEl.textContent = "Pinging Kodi JSON-RPC...";
+      resEl.style.color = "var(--text-muted)";
+
+      try {
+        const res = await fetch("/api/kodi/test", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ host, port, user, password: pass })
+        });
+        const data = await res.json();
+        if (data.success) {
+          resEl.textContent = "✅ Kodi responded with PONG!";
+          resEl.style.color = "var(--accent-green)";
+        } else {
+          resEl.textContent = `❌ Kodi unreachable: ${data.error}`;
+          resEl.style.color = "var(--accent-red)";
+        }
+      } catch (err) {
+        resEl.textContent = `❌ Error: ${err.message}`;
+        resEl.style.color = "var(--accent-red)";
+      }
+    });
+  }
+
+  // Add YouTube Preset Stream
+  const btnAddPreset = document.getElementById("btn-add-yt-preset");
+  if (btnAddPreset) {
+    btnAddPreset.addEventListener("click", () => {
+      const title = prompt("Enter stream title (e.g. Chillhop Beats):");
+      if (!title) return;
+      const url = prompt("Enter YouTube URL:");
+      if (!url) return;
+
+      if (!adminConfig.screensaver.youtube_audio.preset_streams) {
+        adminConfig.screensaver.youtube_audio.preset_streams = [];
+      }
+      adminConfig.screensaver.youtube_audio.preset_streams.push({ title, url });
+      renderPresetStreamsTable(adminConfig.screensaver.youtube_audio.preset_streams);
+    });
+  }
+}
+
+async function loadAdminConfig() {
+  try {
+    const res = await fetch("/api/config");
+    if (res.ok) {
+      adminConfig = await res.json();
+      populateAdminFields(adminConfig);
+    }
+  } catch (err) {
+    console.error("Failed to load admin config:", err);
+  }
+}
+
+function populateAdminFields(cfg) {
+  if (!cfg) return;
+
+  // Tuya Devices Table
+  renderAdminDevicesTable(cfg.tuya?.devices || []);
+
+  // Tuya Cloud
+  if (cfg.tuya?.cloud) {
+    document.getElementById("tuya-cloud-id").value = cfg.tuya.cloud.access_id || "";
+    document.getElementById("tuya-cloud-secret").value = cfg.tuya.cloud.access_secret || "";
+    document.getElementById("tuya-cloud-endpoint").value = cfg.tuya.cloud.endpoint || "https://openapi.tuyaeu.com";
+    document.getElementById("tuya-cloud-uid").value = cfg.tuya.cloud.user_id || "";
+  }
+
+  // Bluetooth
+  if (cfg.bluetooth_audio) {
+    document.getElementById("bt-enabled").checked = Boolean(cfg.bluetooth_audio.enabled);
+    document.getElementById("bt-mac").value = cfg.bluetooth_audio.target_mac || "";
+    document.getElementById("bt-name").value = cfg.bluetooth_audio.device_name || "Surround Sound";
+    document.getElementById("bt-auto-reconnect").checked = Boolean(cfg.bluetooth_audio.auto_reconnect);
+    document.getElementById("bt-interval").value = cfg.bluetooth_audio.reconnect_interval_seconds || 15;
+    document.getElementById("bt-default-vol").value = cfg.bluetooth_audio.default_volume || 70;
+  }
+
+  // Kodi
+  if (cfg.kodi) {
+    document.getElementById("kodi-enabled").checked = Boolean(cfg.kodi.enabled);
+    document.getElementById("kodi-host").value = cfg.kodi.host || "127.0.0.1";
+    document.getElementById("kodi-port").value = cfg.kodi.port || 8080;
+    document.getElementById("kodi-user").value = cfg.kodi.user || "kodi";
+    document.getElementById("kodi-pass").value = cfg.kodi.password || "";
+    document.getElementById("kodi-cmd").value = cfg.kodi.launch_command || "kodi-standalone";
+  }
+
+  // Screensaver
+  if (cfg.screensaver) {
+    document.getElementById("ss-enabled").checked = Boolean(cfg.screensaver.enabled);
+    document.getElementById("ss-idle").value = cfg.screensaver.idle_timeout_seconds || 120;
+    document.getElementById("ss-transition").value = cfg.screensaver.photo_transition_seconds || 15;
+    document.getElementById("ss-photo-dir").value = cfg.screensaver.photo_directory || "./frontend/assets/photos";
+    document.getElementById("ss-unsplash").checked = Boolean(cfg.screensaver.use_unsplash_random);
+
+    if (cfg.screensaver.youtube_audio) {
+      document.getElementById("ss-yt-autoplay").checked = Boolean(cfg.screensaver.youtube_audio.auto_play_on_screensaver);
+      document.getElementById("ss-yt-vol").value = cfg.screensaver.youtube_audio.volume || 50;
+      renderPresetStreamsTable(cfg.screensaver.youtube_audio.preset_streams || []);
+    }
+
+    if (cfg.screensaver.widgets) {
+      document.getElementById("ss-w-clock").checked = Boolean(cfg.screensaver.widgets.show_clock);
+      document.getElementById("ss-w-weather").checked = Boolean(cfg.screensaver.widgets.show_weather);
+      document.getElementById("ss-w-devices").checked = Boolean(cfg.screensaver.widgets.show_device_summaries);
+      document.getElementById("ss-w-telemetry").checked = Boolean(cfg.screensaver.widgets.show_system_telemetry);
+    }
+  }
+
+  // Weather
+  if (cfg.weather) {
+    document.getElementById("weather-lat").value = cfg.weather.latitude || 51.5074;
+    document.getElementById("weather-lon").value = cfg.weather.longitude || -0.1278;
+    document.getElementById("weather-units").value = cfg.weather.units || "celsius";
+  }
+
+  // Server
+  if (cfg.server) {
+    document.getElementById("server-port").value = cfg.server.port || 8080;
+    document.getElementById("server-host").value = cfg.server.host || "0.0.0.0";
+  }
+}
+
+function renderAdminDevicesTable(devices) {
+  const tbody = document.getElementById("admin-devices-tbody");
+  if (!tbody) return;
+
+  if (!devices || devices.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted); padding: 24px;">No Tuya devices configured yet. Click "+ Add New Device" above.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = devices.map(dev => `
+    <tr>
+      <td><strong>${escapeHtml(dev.name)}</strong></td>
+      <td><code>${escapeHtml(dev.id)}</code></td>
+      <td>${escapeHtml(dev.ip || 'Auto / Cloud')}</td>
+      <td><span class="badge badge-type">${escapeHtml(dev.type)}</span></td>
+      <td>${escapeHtml(dev.room || 'Default')}</td>
+      <td>v${dev.version || 3.3}</td>
+      <td>
+        <div style="display: flex; gap: 8px;">
+          <button class="action-btn" style="padding: 6px 12px; font-size: 12px;" onclick="testDeviceRow('${dev.id}', '${dev.ip}', '${dev.local_key}', ${dev.version})">⚡ Test</button>
+          <button class="action-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.1);" onclick="editDeviceRow('${dev.id}')">✏️ Edit</button>
+          <button class="action-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: var(--accent-red);" onclick="deleteDeviceRow('${dev.id}')">🗑️</button>
+        </div>
+      </td>
+    </tr>
+  `).join("");
+}
+
+function renderPresetStreamsTable(presets) {
+  const container = document.getElementById("admin-yt-presets-list");
+  if (!container) return;
+
+  if (!presets || presets.length === 0) {
+    container.innerHTML = `<div style="color: var(--text-muted); padding: 10px;">No preset streams added yet.</div>`;
+    return;
+  }
+
+  container.innerHTML = presets.map((p, idx) => `
+    <div style="display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; background: rgba(255,255,255,0.03); border-radius: 10px; margin-bottom: 8px;">
+      <div>
+        <div style="font-weight: 600;">${escapeHtml(p.title)}</div>
+        <div style="font-size: 12px; color: var(--text-muted);">${escapeHtml(p.url)}</div>
+      </div>
+      <button class="action-btn" style="padding: 6px 12px; font-size: 12px; background: rgba(239, 68, 68, 0.2); color: var(--accent-red);" onclick="removePresetStream(${idx})">
+        Remove
+      </button>
+    </div>
+  `).join("");
+}
+
+function removePresetStream(index) {
+  if (adminConfig?.screensaver?.youtube_audio?.preset_streams) {
+    adminConfig.screensaver.youtube_audio.preset_streams.splice(index, 1);
+    renderPresetStreamsTable(adminConfig.screensaver.youtube_audio.preset_streams);
+  }
+}
+
+async function testDeviceRow(id, ip, key, version) {
+  showToast(`Testing device ${id}...`);
+  try {
+    const res = await fetch("/api/devices/test", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, ip, local_key: key, version: version || 3.3 })
+    });
+    const data = await res.json();
+    if (data.success) {
+      showToast(`✅ Device ${id} is Online and responding!`);
+    } else {
+      showToast(`❌ Device ${id} error: ${data.error}`);
+    }
+  } catch (err) {
+    showToast(`Test error: ${err.message}`);
+  }
+}
+
+function editDeviceRow(id) {
+  const dev = adminConfig?.tuya?.devices?.find(d => d.id === id);
+  if (!dev) return;
+
+  editingDeviceId = id;
+  document.getElementById("modal-device-title").textContent = `Edit Device: ${dev.name}`;
+  document.getElementById("device-id").value = dev.id;
+  document.getElementById("device-name").value = dev.name;
+  document.getElementById("device-ip").value = dev.ip || "";
+  document.getElementById("device-key").value = dev.local_key || "";
+  document.getElementById("device-version").value = dev.version || "3.3";
+  document.getElementById("device-type").value = dev.type || "switch";
+  document.getElementById("device-room").value = dev.room || "Default";
+  document.getElementById("device-test-result").textContent = "";
+
+  document.getElementById("modal-device-form").style.display = "flex";
+}
+
+async function deleteDeviceRow(id) {
+  if (!confirm(`Are you sure you want to delete device ${id}?`)) return;
+
+  try {
+    const res = await fetch(`/api/config/devices/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("Device deleted");
+      await loadAdminConfig();
+    } else {
+      showToast("Failed to delete device");
+    }
+  } catch (err) {
+    showToast(`Delete error: ${err.message}`);
+  }
+}
+
+async function saveFullConfig() {
+  const saveBtn = document.getElementById("btn-save-all-config");
+  if (saveBtn) saveBtn.textContent = "Saving...";
+
+  const payload = {
+    server: {
+      host: document.getElementById("server-host").value.trim() || "0.0.0.0",
+      port: parseInt(document.getElementById("server-port").value || "8080"),
+      debug: false
+    },
+    tuya: {
+      mode: "local",
+      cloud: {
+        access_id: document.getElementById("tuya-cloud-id").value.trim(),
+        access_secret: document.getElementById("tuya-cloud-secret").value.trim(),
+        endpoint: document.getElementById("tuya-cloud-endpoint").value.trim() || "https://openapi.tuyaeu.com",
+        user_id: document.getElementById("tuya-cloud-uid").value.trim()
+      },
+      devices: adminConfig?.tuya?.devices || []
+    },
+    bluetooth_audio: {
+      enabled: document.getElementById("bt-enabled").checked,
+      target_mac: document.getElementById("bt-mac").value.trim(),
+      device_name: document.getElementById("bt-name").value.trim() || "Surround Sound",
+      auto_reconnect: document.getElementById("bt-auto-reconnect").checked,
+      reconnect_interval_seconds: parseInt(document.getElementById("bt-interval").value || "15"),
+      default_volume: parseInt(document.getElementById("bt-default-vol").value || "70")
+    },
+    kodi: {
+      enabled: document.getElementById("kodi-enabled").checked,
+      host: document.getElementById("kodi-host").value.trim() || "127.0.0.1",
+      port: parseInt(document.getElementById("kodi-port").value || "8080"),
+      user: document.getElementById("kodi-user").value.trim() || "kodi",
+      password: document.getElementById("kodi-pass").value.trim(),
+      launch_command: document.getElementById("kodi-cmd").value.trim() || "kodi-standalone",
+      auto_switch_display: true
+    },
+    screensaver: {
+      enabled: document.getElementById("ss-enabled").checked,
+      idle_timeout_seconds: parseInt(document.getElementById("ss-idle").value || "120"),
+      photo_transition_seconds: parseInt(document.getElementById("ss-transition").value || "15"),
+      photo_directory: document.getElementById("ss-photo-dir").value.trim() || "./frontend/assets/photos",
+      use_unsplash_random: document.getElementById("ss-unsplash").checked,
+      youtube_audio: {
+        enabled: true,
+        auto_play_on_screensaver: document.getElementById("ss-yt-autoplay").checked,
+        volume: parseInt(document.getElementById("ss-yt-vol").value || "50"),
+        preset_streams: adminConfig?.screensaver?.youtube_audio?.preset_streams || []
+      },
+      widgets: {
+        show_clock: document.getElementById("ss-w-clock").checked,
+        show_weather: document.getElementById("ss-w-weather").checked,
+        show_device_summaries: document.getElementById("ss-w-devices").checked,
+        show_system_telemetry: document.getElementById("ss-w-telemetry").checked
+      }
+    },
+    weather: {
+      latitude: parseFloat(document.getElementById("weather-lat").value || "51.5074"),
+      longitude: parseFloat(document.getElementById("weather-lon").value || "-0.1278"),
+      units: document.getElementById("weather-units").value || "celsius"
+    }
+  };
+
+  try {
+    const res = await fetch("/api/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      showToast("🎉 Configuration saved and hot-reloaded successfully!");
+      await loadAdminConfig();
+    } else {
+      const err = await res.json();
+      showToast(`Error: ${err.detail || 'Failed to save config'}`);
+    }
+  } catch (err) {
+    showToast(`Save error: ${err.message}`);
+  } finally {
+    if (saveBtn) saveBtn.textContent = "💾 Save All Configuration & Apply";
+  }
+}

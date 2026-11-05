@@ -176,6 +176,14 @@ async def scan_tuya_devices():
     cloud_devs = await tuya_mgr.fetch_cloud_devices()
     return {"local": local_devs, "cloud": cloud_devs}
 
+@app.post("/api/devices/test")
+async def test_tuya_device(payload: Dict[str, Any] = Body(...)):
+    dev_id = payload.get("id", "")
+    ip = payload.get("ip", "")
+    local_key = payload.get("local_key", "")
+    version = float(payload.get("version", 3.3))
+    return await tuya_mgr.test_connection(dev_id, ip, local_key, version)
+
 # Bluetooth Surround Sound
 @app.get("/api/bluetooth")
 async def get_bluetooth_status():
@@ -234,6 +242,14 @@ async def kodi_launch():
 async def kodi_quit():
     success = await kodi_mgr.quit_kodi()
     return {"status": "ok" if success else "failed"}
+
+@app.post("/api/kodi/test")
+async def test_kodi_connection(payload: Dict[str, Any] = Body(...)):
+    host = payload.get("host", "127.0.0.1")
+    port = int(payload.get("port", 8080))
+    user = payload.get("user", "")
+    password = payload.get("password", "")
+    return await kodi_mgr.test_connection(host, port, user, password)
 
 # Background & YouTube Media Player
 @app.get("/api/media")
@@ -325,6 +341,110 @@ async def toggle_display(payload: Dict[str, bool] = Body(...)):
     power_on = payload.get("power_on", True)
     success = SystemManager.set_display_power(power_on)
     return {"status": "ok" if success else "failed", "power_on": power_on}
+
+# Location Auto-Detection
+@app.post("/api/weather/detect-location")
+async def detect_location():
+    try:
+        res = requests.get("http://ip-api.com/json/", timeout=4)
+        if res.status_code == 200:
+            data = res.json()
+            if data.get("status") == "success":
+                return {
+                    "success": True,
+                    "latitude": round(data.get("lat", 0), 4),
+                    "longitude": round(data.get("lon", 0), 4),
+                    "city": data.get("city", ""),
+                    "country": data.get("country", "")
+                }
+    except Exception as e:
+        logger.error(f"Error detecting location: {e}")
+    return {"success": False, "error": "Could not auto-detect location"}
+
+# ----------------- Full Admin Configuration Endpoints -----------------
+
+@app.get("/api/config")
+async def get_config():
+    global config
+    return config.model_dump()
+
+@app.post("/api/config")
+async def update_full_config(new_conf_data: Dict[str, Any] = Body(...)):
+    global config, _cached_weather
+    try:
+        new_app_config = AppConfig(**new_conf_data)
+        save_config(new_app_config)
+        config = new_app_config
+        
+        # Hot-reload managers
+        tuya_mgr.reload_config(config.tuya)
+        bt_mgr.reload_config(config.bluetooth_audio)
+        kodi_mgr.reload_config(config.kodi)
+        media_player.reload_config(config.screensaver.youtube_audio)
+        screensaver_mgr.reload_config(config.screensaver)
+        _cached_weather = {} # clear weather cache
+
+        # Broadcast update to clients
+        await ws_manager.broadcast({
+            "type": "config_updated",
+            "data": config.model_dump()
+        })
+
+        return {"status": "ok", "message": "Configuration saved & applied successfully"}
+    except Exception as e:
+        logger.error(f"Error saving config: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid configuration data: {str(e)}")
+
+@app.post("/api/config/devices")
+async def add_config_device(device_data: Dict[str, Any] = Body(...)):
+    global config
+    try:
+        from backend.config import TuyaDeviceConfig
+        dev = TuyaDeviceConfig(**device_data)
+        # Check if already exists
+        existing = [d for d in config.tuya.devices if d.id == dev.id]
+        if existing:
+            raise HTTPException(status_code=400, detail=f"Device with ID {dev.id} already exists")
+        
+        config.tuya.devices.append(dev)
+        save_config(config)
+        tuya_mgr.reload_config(config.tuya)
+        return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.put("/api/config/devices/{device_id}")
+async def update_config_device(device_id: str, device_data: Dict[str, Any] = Body(...)):
+    global config
+    try:
+        from backend.config import TuyaDeviceConfig
+        found = False
+        for idx, d in enumerate(config.tuya.devices):
+            if d.id == device_id:
+                device_data["id"] = device_id
+                config.tuya.devices[idx] = TuyaDeviceConfig(**device_data)
+                found = True
+                break
+        if not found:
+            raise HTTPException(status_code=404, detail="Device not found")
+        
+        save_config(config)
+        tuya_mgr.reload_config(config.tuya)
+        return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@app.delete("/api/config/devices/{device_id}")
+async def delete_config_device(device_id: str):
+    global config
+    config.tuya.devices = [d for d in config.tuya.devices if d.id != device_id]
+    save_config(config)
+    tuya_mgr.reload_config(config.tuya)
+    return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
 
 # Frontend Static Files Mount
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")

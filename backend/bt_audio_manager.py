@@ -28,6 +28,13 @@ class BluetoothAudioManager:
         if self._reconnect_task:
             self._reconnect_task.cancel()
 
+    def reload_config(self, config: BluetoothAudioConfig):
+        self.config = config
+        self.current_mac = self.config.target_mac
+        self.current_device_name = self.config.device_name
+        self.volume = self.config.default_volume
+        logger.info("BluetoothAudioManager configuration reloaded.")
+
     async def _auto_reconnect_loop(self):
         while self._running:
             try:

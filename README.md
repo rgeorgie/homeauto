@@ -23,7 +23,15 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
    - **Background Audio**: Integrated YouTube audio streamer (Lofi, Jazz, Ambient nature sounds or custom YouTube URL) with volume controls.
    - **Instant Wake**: Tap anywhere on the 15" touchscreen to wake up.
 
-4. **🎬 Kodi Integration for TV & Movies**
+4. **🛠️ Admin Setup & Control Center Web Panel**
+   - **Device Management**: Add, edit, test local connection, and delete SmartLife / Tuya devices, smart panels, and switches in real-time.
+   - **Bluetooth Surround Audio Setup**: Configure target MAC, auto-reconnect supervisor, default volume.
+   - **Kodi Settings & Connectivity Tester**: Configure host/port, test connection with real-time ping.
+   - **Screensaver & YouTube Audio Stream Manager**: Add custom YouTube background streams, set idle timeout, photo folder, and glanceable widget toggles.
+   - **Weather & Geolocation**: Auto-detect your latitude & longitude with 1-click.
+   - **Live Hot-Reload**: Save changes directly to `config.yaml` with automatic hot-reloading of all backend workers without restarting the service.
+
+5. **🎬 Kodi Integration for TV & Movies**
    - One-touch launcher to start Kodi on your display.
    - Live "Now Playing" playback banner and media controls.
    - Full touch D-Pad remote control (Up, Down, Left, Right, OK, Back, Home, Menu).

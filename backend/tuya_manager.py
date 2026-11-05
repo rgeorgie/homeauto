@@ -22,6 +22,14 @@ class TuyaManager:
         self._init_cloud()
         self._init_local_devices()
 
+    def reload_config(self, config: TuyaConfig):
+        self.config = config
+        self.local_devices.clear()
+        self.device_states.clear()
+        self._init_cloud()
+        self._init_local_devices()
+        logger.info("TuyaManager configuration reloaded.")
+
     def _init_cloud(self):
         if self.config.cloud.access_id and self.config.cloud.access_secret and TUYA_CONNECTOR_AVAILABLE:
             try:
@@ -198,6 +206,28 @@ class TuyaManager:
                 self.device_states[dev_id]["is_on"] = is_on
                 self.device_states[dev_id]["online"] = True
         return success
+
+    async def test_connection(self, dev_id: str, ip: str, local_key: str, version: float = 3.3) -> Dict[str, Any]:
+        """Tests local communication with a device without saving."""
+        def _test():
+            try:
+                device = tinytuya.OutletDevice(
+                    dev_id=dev_id,
+                    address=ip,
+                    local_key=local_key,
+                    version=version
+                )
+                device.set_socketPersistent(False)
+                res = device.status()
+                if res and "dps" in res:
+                    return {"success": True, "dps": res["dps"]}
+                else:
+                    return {"success": False, "error": res.get("Error", "No status received")}
+            except Exception as e:
+                return {"success": False, "error": str(e)}
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _test)
 
     async def set_device_brightness(self, dev_id: str, brightness: int) -> bool:
         """Sets brightness (0-100 or 0-1000)."""

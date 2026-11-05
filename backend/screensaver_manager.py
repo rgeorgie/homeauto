@@ -21,6 +21,9 @@ class ScreensaverManager:
     def __init__(self, config: ScreensaverConfig):
         self.config = config
 
+    def reload_config(self, config: ScreensaverConfig):
+        self.config = config
+
     def get_photos(self) -> List[str]:
         """Returns list of photo paths / URLs for the slideshow."""
         photos = []
