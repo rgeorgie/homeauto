@@ -172,6 +172,10 @@ async def set_device_power(device_id: str, payload: Dict[str, bool] = Body(...))
     success = await tuya_mgr.set_device_power(device_id, is_on)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to communicate with Tuya device")
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "devices": await tuya_mgr.get_all_states() }
+    })
     return {"status": "ok", "device_id": device_id, "is_on": is_on}
 
 @app.post("/api/devices/{device_id}/brightness")
@@ -180,6 +184,10 @@ async def set_device_brightness(device_id: str, payload: Dict[str, int] = Body(.
     success = await tuya_mgr.set_device_brightness(device_id, brightness)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to adjust brightness")
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "devices": await tuya_mgr.get_all_states() }
+    })
     return {"status": "ok", "device_id": device_id, "brightness": brightness}
 
 @app.post("/api/devices/{device_id}/temperature")
@@ -188,6 +196,10 @@ async def set_device_temperature(device_id: str, payload: Dict[str, float] = Bod
     success = await tuya_mgr.set_device_temperature(device_id, float(temperature))
     if not success:
         raise HTTPException(status_code=500, detail="Failed to set target temperature")
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "devices": await tuya_mgr.get_all_states() }
+    })
     return {"status": "ok", "device_id": device_id, "target_temperature": temperature}
 
 @app.post("/api/devices/{device_id}/feed")
@@ -196,6 +208,10 @@ async def feed_pet_endpoint(device_id: str, payload: Dict[str, int] = Body(defau
     success = await tuya_mgr.feed_pet(device_id, int(portions))
     if not success:
         raise HTTPException(status_code=500, detail="Failed to trigger pet feeding")
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "devices": await tuya_mgr.get_all_states() }
+    })
     return {"status": "ok", "device_id": device_id, "portions": portions}
 
 @app.post("/api/devices/scan")

@@ -25,7 +25,7 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
         return "pet_feeder"
 
     # 2. Climate / Thermostats / Heaters / Radiator TRVs
-    if cat in ["wk", "wkf", "rs", "qn", "tc", "wkjsq"] or any(k in combined for k in ["thermostat", "heat", "heater", "climate", "trv", "valve", "underfloor"]):
+    if cat in ["wk", "wkf", "rs", "qn", "tc", "wkjsq"] or any(k in combined for k in ["thermostat", "heat", "heater", "climate", "trv", "valve", "underfloor", "radiator", "boiler"]):
         return "climate"
 
     # 3. Lights / Bulbs / Strips / Lamps
@@ -49,6 +49,200 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
         return "fan"
 
     return "switch"
+
+
+def extract_tuya_climate_data(dps: Dict[str, Any], dev_type: str = "climate") -> Dict[str, Any]:
+    """
+    Extracts target temperature, current temperature, humidity, mode, battery, and heating status
+    from Tuya DPS data across standard Tuya, Moes, Avatto, Beca, Floureon, TRVs, and sensors.
+    """
+    def _parse_temp(val: Any) -> Optional[float]:
+        if val is None or isinstance(val, bool):
+            return None
+        if isinstance(val, (int, float)):
+            num = float(val)
+            # 1. Standard 1x Celsius: 0.0 <= num <= 45.0
+            if 0.0 <= num <= 45.0:
+                return round(num, 1)
+            # 2. 10x scaled Celsius: 45.0 < num <= 500.0 (e.g. 215 = 21.5°C)
+            elif 45.0 < num <= 500.0:
+                return round(num / 10.0, 1)
+            # 3. 100x scaled Celsius: 500.0 < num <= 5000.0 (e.g. 2150 = 21.5°C)
+            elif 500.0 < num <= 5000.0:
+                return round(num / 100.0, 1)
+        return None
+
+    def _get_scale(raw_val: Any) -> int:
+        if raw_val is not None and isinstance(raw_val, (int, float)) and not isinstance(raw_val, bool):
+            num = float(raw_val)
+            if num > 500:
+                return 100
+            elif num > 45:
+                return 10
+        return 1
+
+    target_temp = None
+    target_dps_key = None
+    target_scale = 10
+
+    current_temp = None
+    current_dps_key = None
+
+    humidity = None
+    battery = None
+    mode = None
+
+    # --- Mode extraction ---
+    for mode_key in ['2', '4', '104', '116', '118']:
+        if mode_key in dps:
+            m_val = dps[mode_key]
+            if isinstance(m_val, str):
+                mode = m_val
+                break
+
+    # --- Schema A: Standard Tuya (Category wk / wkf / rs / qn) ---
+    # DP 16 = temp_set, DP 24 = temp_current
+    if '16' in dps and not isinstance(dps['16'], bool):
+        parsed = _parse_temp(dps['16'])
+        if parsed is not None:
+            target_temp = parsed
+            target_dps_key = '16'
+            target_scale = _get_scale(dps['16'])
+
+    if '24' in dps and not isinstance(dps['24'], bool):
+        parsed = _parse_temp(dps['24'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '24'
+
+    # --- Schema B: Moes / Avatto / WiFi Underfloor heating ---
+    # DP 101 = temp_set, DP 102 = temp_current
+    if target_temp is None and '101' in dps and not isinstance(dps['101'], bool):
+        parsed = _parse_temp(dps['101'])
+        if parsed is not None:
+            target_temp = parsed
+            target_dps_key = '101'
+            target_scale = _get_scale(dps['101'])
+
+    if current_temp is None and '102' in dps and not isinstance(dps['102'], bool):
+        parsed = _parse_temp(dps['102'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '102'
+
+    # --- Schema C: Tuya TRV / Radiator valves (HY368 / TS0601 / Sea801 / TV01) ---
+    # DP 103 = temp_set, DP 104 = temp_current (or DP 24 target, DP 28 current)
+    if target_temp is None and '103' in dps and not isinstance(dps['103'], bool):
+        parsed = _parse_temp(dps['103'])
+        if parsed is not None:
+            target_temp = parsed
+            target_dps_key = '103'
+            target_scale = _get_scale(dps['103'])
+
+    if current_temp is None and '104' in dps and not isinstance(dps['104'], bool):
+        parsed = _parse_temp(dps['104'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '104'
+
+    if current_temp is None and '28' in dps and not isinstance(dps['28'], bool):
+        parsed = _parse_temp(dps['28'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '28'
+
+    # --- Schema D: Beca BHT-002 / BHT-6000 / Floureon ---
+    # DP 2 = temp_set (int), DP 3 = temp_current (int)
+    if target_temp is None and '2' in dps and isinstance(dps['2'], (int, float)) and not isinstance(dps['2'], bool):
+        parsed = _parse_temp(dps['2'])
+        if parsed is not None:
+            target_temp = parsed
+            target_dps_key = '2'
+            target_scale = _get_scale(dps['2'])
+
+    if current_temp is None and '3' in dps and isinstance(dps['3'], (int, float)) and not isinstance(dps['3'], bool):
+        parsed = _parse_temp(dps['3'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '3'
+
+    # --- Schema E: Floor heating with mode on DP 2 ---
+    # DP 4 = temp_set (int), DP 5 = temp_current (int)
+    if target_temp is None and '4' in dps and isinstance(dps['4'], (int, float)) and not isinstance(dps['4'], bool):
+        parsed = _parse_temp(dps['4'])
+        if parsed is not None:
+            target_temp = parsed
+            target_dps_key = '4'
+            target_scale = _get_scale(dps['4'])
+
+    if current_temp is None and '5' in dps and isinstance(dps['5'], (int, float)) and not isinstance(dps['5'], bool):
+        parsed = _parse_temp(dps['5'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '5'
+
+    # --- Schema F: Temperature & Humidity Sensors (Category wsdcg, th01, cg) ---
+    # DP 1 = current temperature, DP 2 = humidity, DP 3 = battery
+    if current_temp is None and '1' in dps and not isinstance(dps['1'], bool):
+        parsed = _parse_temp(dps['1'])
+        if parsed is not None:
+            current_temp = parsed
+            current_dps_key = '1'
+
+    # --- Generic Fallback Scan for Target Temperature ---
+    if target_temp is None:
+        for k in ['16', '101', '103', '105', '106', '4', '2', '8', '18', '19', '26', '30', '40']:
+            if k in dps and not isinstance(dps[k], bool):
+                parsed = _parse_temp(dps[k])
+                if parsed is not None:
+                    target_temp = parsed
+                    target_dps_key = k
+                    target_scale = _get_scale(dps[k])
+                    break
+
+    # --- Generic Fallback Scan for Current Temperature ---
+    if current_temp is None:
+        for k in ['24', '102', '104', '3', '5', '28', '115', '114', '116', '107', '109', '18', '19', '20', '1']:
+            if k in dps and k != target_dps_key and not isinstance(dps[k], bool):
+                parsed = _parse_temp(dps[k])
+                if parsed is not None:
+                    current_temp = parsed
+                    current_dps_key = k
+                    break
+
+    # --- Humidity extraction ---
+    for h_key in ['2', '102', '114', '115', '116', '19', '21']:
+        if h_key in dps and h_key != target_dps_key and h_key != current_dps_key:
+            val = dps[h_key]
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                h_num = int(val)
+                if 0 <= h_num <= 100:
+                    humidity = h_num
+                    break
+                elif 100 < h_num <= 1000:
+                    humidity = int(round(h_num / 10.0))
+                    break
+
+    # --- Battery extraction ---
+    for b_key in ['3', '14', '15', '105', '115', '116']:
+        if b_key in dps and b_key != target_dps_key and b_key != current_dps_key and b_key != '2':
+            val = dps[b_key]
+            if isinstance(val, (int, float)) and not isinstance(val, bool):
+                b_num = int(val)
+                if 0 <= b_num <= 100:
+                    battery = b_num
+                    break
+
+    return {
+        "target_temperature": target_temp,
+        "target_dps_key": target_dps_key,
+        "target_scale": target_scale,
+        "current_temperature": current_temp,
+        "current_dps_key": current_dps_key,
+        "humidity": humidity,
+        "battery": battery,
+        "mode": mode or "manual"
+    }
 
 
 class TuyaManager:
@@ -317,41 +511,22 @@ class TuyaManager:
                 elif '22' in dps and isinstance(dps['22'], int):
                     brightness = int(dps['22'])
 
-                # Thermostat / Heating DPS extraction
-                target_temp = None
-                current_temp = None
-                mode = dps.get('4') or dps.get('2') or 'manual'
-
-                # Target temp DPS candidates: '2', '16', '101', '24'
-                for dps_key in ['2', '16', '101', '24', '103']:
-                    if dps_key in dps and isinstance(dps[dps_key], (int, float)):
-                        val = float(dps[dps_key])
-                        if 5 <= val <= 45: # Standard Celsius range
-                            target_temp = round(val, 1)
-                            break
-                        elif 50 <= val <= 450: # 10x scaled Celsius (e.g., 215 = 21.5°C)
-                            target_temp = round(val / 10.0, 1)
-                            break
-
-                # Current temp DPS candidates: '3', '24', '102', '104', '28'
-                for dps_key in ['3', '24', '102', '104', '28', '115']:
-                    if dps_key in dps and isinstance(dps[dps_key], (int, float)):
-                        val = float(dps[dps_key])
-                        if 0 <= val <= 60:
-                            current_temp = round(val, 1)
-                            break
-                        elif 0 <= val <= 600: # 10x scaled (e.g., 224 = 22.4°C)
-                            current_temp = round(val / 10.0, 1)
-                            break
+                # Thermostat / Heating / Climate DPS extraction
+                dev_type = self.device_states.get(dev_id, {}).get("type", "climate")
+                climate_data = extract_tuya_climate_data(dps, dev_type=dev_type)
 
                 state = self.device_states.get(dev_id, {})
                 state.update({
                     "online": True,
                     "is_on": is_on,
                     "brightness": brightness,
-                    "current_temperature": current_temp if current_temp is not None else state.get("current_temperature", 21.0),
-                    "target_temperature": target_temp if target_temp is not None else state.get("target_temperature", 22.0),
-                    "mode": str(mode) if mode else "manual",
+                    "current_temperature": climate_data["current_temperature"] if climate_data["current_temperature"] is not None else state.get("current_temperature"),
+                    "target_temperature": climate_data["target_temperature"] if climate_data["target_temperature"] is not None else state.get("target_temperature"),
+                    "target_dps_key": climate_data["target_dps_key"] or state.get("target_dps_key"),
+                    "target_scale": climate_data["target_scale"] or state.get("target_scale", 10),
+                    "humidity": climate_data["humidity"] if climate_data["humidity"] is not None else state.get("humidity"),
+                    "battery": climate_data["battery"] if climate_data["battery"] is not None else state.get("battery"),
+                    "mode": climate_data["mode"] or state.get("mode", "manual"),
                     "dps": dps,
                     "error": None
                 })
@@ -551,42 +726,78 @@ class TuyaManager:
         return await loop.run_in_executor(None, _sync)
 
     async def set_device_temperature(self, dev_id: str, temperature: float) -> bool:
-        """Sets target desired temperature for thermostat/heating device."""
+        """Sets target desired temperature for thermostat/heating/climate device."""
+        target_temp = round(float(temperature), 1)
+        state = self.device_states.get(dev_id, {})
         dev = self.local_devices.get(dev_id)
-        if not dev:
-            return False
 
-        def _set_temp():
+        # 1. Determine DPS key and scale factor
+        target_key = state.get("target_dps_key")
+        scale = state.get("target_scale", 10)
+        dps = state.get("dps", {})
+
+        if not target_key:
+            # Fallback scan across common Tuya setpoint DPS keys
+            for k in ['16', '101', '103', '105', '106', '4', '2', '24']:
+                if k in dps and isinstance(dps[k], (int, float)) and not isinstance(dps[k], bool):
+                    target_key = k
+                    if dps[k] > 500:
+                        scale = 100
+                    elif dps[k] > 45:
+                        scale = 10
+                    else:
+                        scale = 1
+                    break
+
+        if not target_key:
+            target_key = '16'  # Standard Tuya DP for temp_set
+            scale = 10
+
+        # Calculate integer value to send based on scale
+        if scale == 100:
+            val = int(round(target_temp * 100))
+        elif scale == 10:
+            val = int(round(target_temp * 10))
+        else:
+            val = int(round(target_temp))
+
+        def _send_local():
+            if not dev:
+                return False
             try:
-                state = self.device_states.get(dev_id, {})
-                dps = state.get("dps", {})
-
-                # Find which DPS key is used for target temperature
-                target_key = None
-                scale_10 = False
-
-                for key in ['2', '16', '101', '24', '103']:
-                    if key in dps and isinstance(dps[key], (int, float)):
-                        target_key = int(key)
-                        if dps[key] > 45: # 10x scale
-                            scale_10 = True
-                        break
-
-                if target_key is None:
-                    target_key = 2 # standard default for Tuya thermostat
-
-                val = int(round(temperature * 10)) if scale_10 else int(round(temperature))
-                dev.set_value(target_key, val)
-                logger.info(f"Set target temperature for {dev_id} to {temperature}°C (DPS {target_key}={val})")
+                # Primary method: set_value (tinytuya handles int/str key)
+                key_to_send = int(target_key) if str(target_key).isdigit() else target_key
+                res = dev.set_value(key_to_send, val)
+                logger.info(f"Set target temperature for {dev_id} to {target_temp}°C (DPS {target_key}={val}): {res}")
+                if isinstance(res, dict) and "Error" in res:
+                    logger.warning(f"Device returned error for set_value DPS {target_key}={val}: {res}")
+                    # Try fallback with multiple values dict
+                    res_alt = dev.set_multiple_values({str(target_key): val})
+                    logger.info(f"Fallback set_multiple_values for {dev_id}: {res_alt}")
+                    if isinstance(res_alt, dict) and "Error" in res_alt:
+                        return False
                 return True
             except Exception as e:
-                logger.error(f"Error setting temperature for {dev_id}: {e}")
+                logger.error(f"Error setting local temperature for {dev_id}: {e}")
                 return False
 
         loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, _set_temp)
-        if success and dev_id in self.device_states:
-            self.device_states[dev_id]["target_temperature"] = round(temperature, 1)
+        success = False
+        if dev:
+            success = await loop.run_in_executor(None, _send_local)
+
+        # Fallback to cloud if local failed or not configured
+        if not success and self.cloud_api:
+            success = await self._set_cloud_temperature(dev_id, target_temp, scale)
+
+        if success:
+            if dev_id in self.device_states:
+                self.device_states[dev_id]["target_temperature"] = target_temp
+                self.device_states[dev_id]["online"] = True
+                if "dps" in self.device_states[dev_id]:
+                    self.device_states[dev_id]["dps"][str(target_key)] = val
+            logger.info(f"Successfully updated target temperature for {dev_id} to {target_temp}°C")
+
         return success
 
     async def feed_pet(self, dev_id: str, portions: int = 1) -> bool:
@@ -657,9 +868,30 @@ class TuyaManager:
             try:
                 commands = [{"code": "switch_1", "value": is_on}]
                 res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
-                return bool(res.get("success"))
+                return bool(res and res.get("success"))
             except Exception as e:
-                logger.error(f"Error sending cloud command to {dev_id}: {e}")
+                logger.error(f"Error sending cloud power command to {dev_id}: {e}")
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _send)
+
+    async def _set_cloud_temperature(self, dev_id: str, temperature: float, scale: int = 10) -> bool:
+        if not self.cloud_api:
+            return False
+
+        def _send():
+            try:
+                val = int(round(temperature * scale)) if scale > 1 else int(round(temperature))
+                commands = [{"code": "temp_set", "value": val}]
+                res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
+                if res and res.get("success"):
+                    return True
+                commands_alt = [{"code": "target_temp", "value": val}]
+                res_alt = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands_alt})
+                return bool(res_alt and res_alt.get("success"))
+            except Exception as e:
+                logger.error(f"Error sending cloud temperature command to {dev_id}: {e}")
                 return False
 
         loop = asyncio.get_event_loop()

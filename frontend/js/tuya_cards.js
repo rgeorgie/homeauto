@@ -270,7 +270,8 @@ function renderTuyaDevices(devices) {
 
 function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
-  const isClimate = dev.type === "climate" || dev.category === "wk" || dev.name.toLowerCase().includes("heat") || dev.name.toLowerCase().includes("thermostat");
+  const isClimate = dev.type === "climate" || dev.type === "sensor" || ["wk", "wkf", "rs", "qn", "tc", "wkjsq", "wsdcg", "thp", "th01", "cg"].includes(dev.category) ||
+    dev.name.toLowerCase().includes("heat") || dev.name.toLowerCase().includes("thermostat") || dev.name.toLowerCase().includes("temp") || dev.name.toLowerCase().includes("trv") || dev.name.toLowerCase().includes("climate") || dev.name.toLowerCase().includes("radiator") || dev.name.toLowerCase().includes("boiler");
   const isPetFeeder = dev.type === "pet_feeder" || dev.type === "pet" || ["cwf", "cwyq", "cwwsq"].includes(dev.category) || dev.name.toLowerCase().includes("feeder") || dev.name.toLowerCase().includes("pet");
 
   let icon = "⚡";
@@ -290,15 +291,22 @@ function createDeviceCardHtml(dev) {
 
   // --- 1. CLIMATE / HEATING THERMOSTAT CARD ---
   if (isClimate) {
-    const currentTemp = dev.current_temperature !== undefined ? parseFloat(dev.current_temperature).toFixed(1) : "21.5";
-    const targetTemp = dev.target_temperature !== undefined ? parseFloat(dev.target_temperature).toFixed(1) : "22.0";
+    const hasCurrent = dev.current_temperature !== undefined && dev.current_temperature !== null;
+    const currentTempDisplay = hasCurrent ? `${parseFloat(dev.current_temperature).toFixed(1)}°C` : `<span style="opacity: 0.5; font-size: 26px;">--.-°C</span>`;
+    
+    const hasTarget = dev.target_temperature !== undefined && dev.target_temperature !== null;
+    const targetTempDisplay = hasTarget ? `${parseFloat(dev.target_temperature).toFixed(1)}°C` : `21.0°C`;
+    const targetSliderVal = hasTarget ? parseFloat(dev.target_temperature).toFixed(1) : "21.0";
+
+    const humidityBadge = (dev.humidity !== undefined && dev.humidity !== null) ? `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px;">💧 ${dev.humidity}%</span>` : '';
+    const batteryBadge = (dev.battery !== undefined && dev.battery !== null) ? `<span style="background: rgba(34, 197, 94, 0.2); color: #4ade80; font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px;">🔋 ${dev.battery}%</span>` : '';
 
     return `
       <div class="card" id="card-${dev.id}" style="border-color: rgba(251, 146, 60, 0.3);">
         <div>
           <div class="card-header">
             <div>
-              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-title">${escapeHtml(dev.name)} ${humidityBadge} ${batteryBadge}</div>
               <div class="card-subtitle">${escapeHtml(dev.room || 'Default')} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(251, 146, 60, 0.15);">🔥</div>
@@ -308,7 +316,7 @@ function createDeviceCardHtml(dev) {
           <div class="climate-current-temp">
             <div>
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Current Temp</div>
-              <div class="climate-temp-big">${currentTemp}°C</div>
+              <div class="climate-temp-big">${currentTempDisplay}</div>
             </div>
             <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}" style="width: auto; padding: 10px 18px; font-size: 14px;">
               ${dev.is_on ? '🔥 Heating' : '❄️ Off'}
@@ -323,7 +331,7 @@ function createDeviceCardHtml(dev) {
               <button class="temp-btn temp-step-minus" data-id="${dev.id}">−</button>
               
               <div class="temp-target-display">
-                <div class="temp-target-val" data-id="${dev.id}">${targetTemp}°C</div>
+                <div class="temp-target-val" data-id="${dev.id}">${targetTempDisplay}</div>
               </div>
 
               <button class="temp-btn temp-step-plus" data-id="${dev.id}">+</button>
@@ -331,7 +339,7 @@ function createDeviceCardHtml(dev) {
 
             <!-- Touch Range Slider -->
             <div class="slider-container" style="margin-top: 10px;">
-              <input type="range" min="15.0" max="32.0" step="0.5" value="${targetTemp}" class="touch-slider device-temp-slider" data-id="${dev.id}" style="accent-color: #fb923c;">
+              <input type="range" min="5.0" max="35.0" step="0.5" value="${targetSliderVal}" class="touch-slider device-temp-slider" data-id="${dev.id}" style="accent-color: #fb923c;">
             </div>
           </div>
         </div>
@@ -458,8 +466,8 @@ async function setDeviceTemperature(deviceId, targetTemp) {
 
 function stepDeviceTemperature(deviceId, stepDelta) {
   const dev = state.devices.find(d => d.id === deviceId);
-  const currentTarget = (dev && dev.target_temperature !== undefined) ? dev.target_temperature : 22.0;
-  const newTarget = Math.max(15.0, Math.min(32.0, currentTarget + stepDelta));
+  const currentTarget = (dev && dev.target_temperature !== undefined && dev.target_temperature !== null) ? dev.target_temperature : 21.0;
+  const newTarget = Math.max(5.0, Math.min(35.0, currentTarget + stepDelta));
   setDeviceTemperature(deviceId, newTarget);
 }
 
