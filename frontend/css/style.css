@@ -696,3 +696,8 @@ body {
   letter-spacing: 0.6px;
   margin-bottom: 12px;
 }
+
+/* Read-only sensor cards */
+.sensor-readings { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 16px; }
+.sensor-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
+.sensor-value { font-size: 26px; font-weight: 700; margin-top: 2px; }

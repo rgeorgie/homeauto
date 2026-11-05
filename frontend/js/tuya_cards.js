@@ -340,15 +340,33 @@ function deviceLocation(dev) {
   return dev.home ? `${escapeHtml(dev.home)} / ${room}` : room;
 }
 
+// Card layout for a device. The stored type wins; category codes / names are only a fallback for generic "switch" devices.
+function deviceKind(dev) {
+  const t = dev.type;
+  if (t === "bulb") return "light";
+  if (t === "pet") return "pet_feeder";
+  if (["sensor", "climate", "pet_feeder", "light"].includes(t)) return t;
+  if (t && t !== "switch") return t; // socket, curtain, fan...
+  const cat = dev.category;
+  if (["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(cat)) return "pet_feeder";
+  if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj"].includes(cat)) return "sensor";
+  if (["wk", "wkf", "rs", "qn", "tc", "wkjsq"].includes(cat)) return "climate";
+  const words = (dev.name || "").toLowerCase().match(/[a-z0-9]+/g) || [];
+  if (words.some(w => ["thermostat", "heater", "trv", "radiator", "boiler"].includes(w))) return "climate";
+  if (words.some(w => ["feeder", "fountain", "waterer"].includes(w))) return "pet_feeder";
+  return "switch";
+}
+
 function createDeviceCardHtml(dev) {
-  const isLight = dev.type === "light" || dev.type === "bulb";
-  const isClimate = dev.type === "climate" || dev.type === "sensor" || ["wk", "wkf", "rs", "qn", "tc", "wkjsq", "wsdcg", "thp", "th01", "cg"].includes(dev.category) ||
-    dev.name.toLowerCase().includes("heat") || dev.name.toLowerCase().includes("thermostat") || dev.name.toLowerCase().includes("temp") || dev.name.toLowerCase().includes("trv") || dev.name.toLowerCase().includes("climate") || dev.name.toLowerCase().includes("radiator") || dev.name.toLowerCase().includes("boiler");
-  const isPetFeeder = dev.type === "pet_feeder" || dev.type === "pet" || ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(dev.category) ||
-    dev.name.toLowerCase().includes("feeder") || dev.name.toLowerCase().includes("pet") || dev.name.toLowerCase().includes("food") || dev.name.toLowerCase().includes("feed") || dev.name.toLowerCase().includes("kibble") || dev.name.toLowerCase().includes("cat") || dev.name.toLowerCase().includes("dog") || dev.name.toLowerCase().includes("meal") || dev.name.toLowerCase().includes("treat") || dev.name.toLowerCase().includes("dispenser") || dev.name.toLowerCase().includes("fountain") || dev.name.toLowerCase().includes("waterer");
+  const kind = deviceKind(dev);
+  const isSensor = kind === "sensor";
+  const isLight = kind === "light";
+  const isClimate = kind === "climate";
+  const isPetFeeder = kind === "pet_feeder";
 
   let icon = "⚡";
   if (isPetFeeder) icon = "🐾";
+  else if (isSensor) icon = "📟";
   else if (isClimate) icon = "🌡️";
   else if (isLight) icon = "💡";
   else if (dev.type === "socket") icon = "🔌";
@@ -360,6 +378,32 @@ function createDeviceCardHtml(dev) {
     } else {
       statusBadge = `<span style="color: var(--text-muted); font-size: 12px;" title="${escapeHtml(dev.error || '')}">○ Offline${dev.error ? ' (' + escapeHtml(String(dev.error).slice(0, 40)) + ')' : ''}</span>`;
     }
+  }
+
+  // --- 0. SENSOR CARD (read-only readings, no controls) ---
+  if (isSensor) {
+    const has = v => v !== undefined && v !== null;
+    const readings = [];
+    if (has(dev.current_temperature)) readings.push(`<div><div class="sensor-label">Temperature</div><div class="sensor-value">${parseFloat(dev.current_temperature).toFixed(1)}°C</div></div>`);
+    if (has(dev.humidity)) readings.push(`<div><div class="sensor-label">Humidity</div><div class="sensor-value">💧 ${dev.humidity}%</div></div>`);
+    if (has(dev.battery)) readings.push(`<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${dev.battery}%</div></div>`);
+    const body = readings.length
+      ? `<div class="sensor-readings">${readings.join("")}</div>`
+      : `<div style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">${dev.online ? "No readings reported yet" : "Waiting for the sensor to report"}</div>`;
+    return `
+      <div class="card" id="card-${dev.id}">
+        <div>
+          <div class="card-header">
+            <div>
+              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
+            </div>
+            <div class="card-icon">${icon}</div>
+          </div>
+          ${body}
+        </div>
+      </div>
+    `;
   }
 
   // --- 1. CLIMATE / HEATING THERMOSTAT CARD ---
@@ -580,7 +624,7 @@ async function triggerPetFeed(deviceId) {
 function updateAmbientDeviceSummary(devices) {
   const summaryEl = document.getElementById("ss-active-devices");
   if (!summaryEl) return;
-  const activeCount = devices.filter(d => d.is_on).length;
+  const activeCount = devices.filter(d => d.is_on && deviceKind(d) !== "sensor").length;
   summaryEl.textContent = `${activeCount} Active Device${activeCount === 1 ? '' : 's'}`;
 }
 
