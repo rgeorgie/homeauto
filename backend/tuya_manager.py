@@ -105,26 +105,47 @@ class TuyaManager:
                     elif "tuyain" in self.config.cloud.endpoint or "in" in self.config.cloud.endpoint:
                         region = "in"
 
-                    # Method A: TinyTuya Cloud
+                    uid = self.config.cloud.user_id.strip() if self.config.cloud.user_id else ""
+
                     c = tinytuya.Cloud(
                         apiRegion=region,
                         apiKey=self.config.cloud.access_id,
                         apiSecret=self.config.cloud.access_secret
                     )
-                    c_devices = c.getdevices()
-                    if isinstance(c_devices, list):
-                        for dev in c_devices:
-                            dev_id = dev.get("id")
-                            if dev_id:
-                                cloud_device_map[dev_id] = dev
-                    
-                    # Method B: If still empty, try with TuyaOpenAPI
-                    if not cloud_device_map and self.cloud_api:
-                        res = self.cloud_api.get("/v1.0/devices")
-                        if res and res.get("success") and "result" in res:
-                            for dev in res.get("result", {}).get("devices", res.get("result", [])):
+
+                    # Method A: If UID provided, query user devices directly
+                    if uid:
+                        raw = c.cloudrequest(f"/v1.0/users/{uid}/devices")
+                        if raw and raw.get("success") and "result" in raw:
+                            for dev in raw.get("result", []):
                                 if isinstance(dev, dict) and dev.get("id"):
                                     cloud_device_map[dev["id"]] = dev
+
+                    # Method B: TinyTuya Cloud getdevices
+                    if not cloud_device_map:
+                        c_devices = c.getdevices()
+                        if isinstance(c_devices, list):
+                            for dev in c_devices:
+                                if isinstance(dev, dict) and dev.get("id"):
+                                    cloud_device_map[dev["id"]] = dev
+
+                    # Method C: TuyaOpenAPI endpoints
+                    if not cloud_device_map and self.cloud_api:
+                        if uid:
+                            res = self.cloud_api.get(f"/v1.0/users/{uid}/devices")
+                            if res and res.get("success") and "result" in res:
+                                for dev in res.get("result", []):
+                                    if isinstance(dev, dict) and dev.get("id"):
+                                        cloud_device_map[dev["id"]] = dev
+
+                        if not cloud_device_map:
+                            res = self.cloud_api.get("/v1.0/devices")
+                            if res and res.get("success") and "result" in res:
+                                devs = res.get("result", {}).get("devices", res.get("result", []))
+                                if isinstance(devs, list):
+                                    for dev in devs:
+                                        if isinstance(dev, dict) and dev.get("id"):
+                                            cloud_device_map[dev["id"]] = dev
 
                     logger.info(f"Retrieved {len(cloud_device_map)} devices from Tuya Cloud API.")
                 except Exception as e:
@@ -324,46 +345,86 @@ class TuyaManager:
             elif "tuyain" in self.config.cloud.endpoint or "in" in self.config.cloud.endpoint:
                 region = "in"
 
+            uid = self.config.cloud.user_id.strip() if self.config.cloud.user_id else ""
+
             c = tinytuya.Cloud(
                 apiRegion=region,
                 apiKey=self.config.cloud.access_id,
                 apiSecret=self.config.cloud.access_secret
             )
-            
-            # 1. Fetch devices list via TinyTuya
-            cloud_devs = c.getdevices()
+
+            cloud_devices_list = []
             cloud_key_map = {}
+            api_errors = []
 
-            if isinstance(cloud_devs, list):
-                for d in cloud_devs:
-                    dev_id = d.get("id")
-                    key = d.get("key") or d.get("local_key")
-                    if dev_id and key:
-                        cloud_key_map[dev_id] = key
+            # 1. Try with explicit UID if present
+            if uid:
+                try:
+                    res = c.cloudrequest(f"/v1.0/users/{uid}/devices")
+                    if res and res.get("success") and "result" in res:
+                        cloud_devices_list = res.get("result", [])
+                    elif res and not res.get("success"):
+                        api_errors.append(f"UID query error: {res.get('msg', res.get('code'))}")
+                except Exception as e:
+                    api_errors.append(f"UID request failed: {e}")
 
-            # 2. If any configured devices are missing keys, query individual device details
+            # 2. Try TinyTuya getdevices
+            if not cloud_devices_list:
+                try:
+                    c_devs = c.getdevices()
+                    if isinstance(c_devs, list) and len(c_devs) > 0:
+                        cloud_devices_list = c_devs
+                except Exception as e:
+                    api_errors.append(f"getdevices failed: {e}")
+
+            # 3. Try TuyaOpenAPI directly
+            if not cloud_devices_list and self.cloud_api:
+                try:
+                    if uid:
+                        o_res = self.cloud_api.get(f"/v1.0/users/{uid}/devices")
+                        if o_res and o_res.get("success"):
+                            cloud_devices_list = o_res.get("result", [])
+                    if not cloud_devices_list:
+                        o_res = self.cloud_api.get("/v1.0/devices")
+                        if o_res and o_res.get("success"):
+                            res_data = o_res.get("result", {})
+                            cloud_devices_list = res_data.get("devices", res_data) if isinstance(res_data, dict) else res_data
+                except Exception as e:
+                    api_errors.append(f"OpenAPI failed: {e}")
+
+            # Populate key map from retrieved list
+            if isinstance(cloud_devices_list, list):
+                for d in cloud_devices_list:
+                    if isinstance(d, dict):
+                        dev_id = d.get("id")
+                        key = d.get("key") or d.get("local_key")
+                        if dev_id and key:
+                            cloud_key_map[dev_id] = key
+
+            # 4. For any devices in self.config.devices, query /v1.0/devices/{id} directly
             updated_count = 0
             for dev in self.config.devices:
                 key = cloud_key_map.get(dev.id)
                 if not key:
-                    # Query individual device endpoint
                     try:
-                        res = c.getconnectstatus(dev.id)
-                        # Try c.cloudrequest
                         raw = c.cloudrequest(f"/v1.0/devices/{dev.id}")
                         if raw and "result" in raw and "local_key" in raw["result"]:
                             key = raw["result"]["local_key"]
                     except Exception as err:
-                        logger.debug(f"Device {dev.id} key lookup error: {err}")
+                        logger.debug(f"Device {dev.id} direct lookup error: {err}")
 
                 if key:
                     dev.local_key = key
                     updated_count += 1
 
+            total_found = len(cloud_devices_list) if isinstance(cloud_devices_list, list) else 0
+
             return {
-                "success": True,
-                "total_cloud_found": len(cloud_devs) if isinstance(cloud_devs, list) else 0,
+                "success": total_found > 0 or updated_count > 0,
+                "total_cloud_found": total_found,
                 "keys_updated": updated_count,
+                "cloud_devices": cloud_devices_list,
+                "api_errors": api_errors,
                 "devices": [d.model_dump() for d in self.config.devices]
             }
 
