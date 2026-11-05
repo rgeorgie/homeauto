@@ -41,6 +41,13 @@ class KodiManager:
 
     async def send_rpc(self, method: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Sends a JSON-RPC request to Kodi."""
+        if not self.config.enabled:
+            return None
+
+        # Prevent querying HomeAuto server itself if Kodi port was left at 8080
+        if self.config.host in ["127.0.0.1", "localhost"] and self.config.port == 8080:
+            return None
+
         payload = {
             "jsonrpc": "2.0",
             "method": method,
@@ -51,11 +58,11 @@ class KodiManager:
 
         def _request():
             try:
-                res = requests.post(self.rpc_url, json=payload, auth=self.auth, timeout=2.5)
+                res = requests.post(self.rpc_url, json=payload, auth=self.auth, timeout=2.0)
                 if res.status_code == 200:
                     return res.json().get("result")
-            except Exception as e:
-                logger.debug(f"Kodi RPC connection error to {self.rpc_url}: {e}")
+            except Exception:
+                pass
             return None
 
         loop = asyncio.get_event_loop()

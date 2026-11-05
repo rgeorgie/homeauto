@@ -33,9 +33,9 @@ class BluetoothAudioConfig(BaseModel):
     default_volume: int = 70
 
 class KodiConfig(BaseModel):
-    enabled: bool = True
+    enabled: bool = False
     host: str = "127.0.0.1"
-    port: int = 8080
+    port: int = 8088
     user: str = "kodi"
     password: str = ""
     launch_command: str = "kodi-standalone"
