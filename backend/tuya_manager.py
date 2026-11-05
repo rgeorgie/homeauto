@@ -94,17 +94,18 @@ class TuyaManager:
             discovered = []
             cloud_device_map = {}
 
-            # Step 1: Query Tuya Cloud via tinytuya.Cloud if credentials exist
+            # Step 1: Query Tuya Cloud via tinytuya.Cloud & TuyaOpenAPI if credentials exist
             if self.config.cloud.access_id and self.config.cloud.access_secret:
                 try:
                     region = "eu"
-                    if "tuyaus" in self.config.cloud.endpoint:
+                    if "tuyaus" in self.config.cloud.endpoint or "us" in self.config.cloud.endpoint:
                         region = "us"
-                    elif "tuyacn" in self.config.cloud.endpoint:
+                    elif "tuyacn" in self.config.cloud.endpoint or "cn" in self.config.cloud.endpoint:
                         region = "cn"
-                    elif "tuyain" in self.config.cloud.endpoint:
+                    elif "tuyain" in self.config.cloud.endpoint or "in" in self.config.cloud.endpoint:
                         region = "in"
 
+                    # Method A: TinyTuya Cloud
                     c = tinytuya.Cloud(
                         apiRegion=region,
                         apiKey=self.config.cloud.access_id,
@@ -116,6 +117,15 @@ class TuyaManager:
                             dev_id = dev.get("id")
                             if dev_id:
                                 cloud_device_map[dev_id] = dev
+                    
+                    # Method B: If still empty, try with TuyaOpenAPI
+                    if not cloud_device_map and self.cloud_api:
+                        res = self.cloud_api.get("/v1.0/devices")
+                        if res and res.get("success") and "result" in res:
+                            for dev in res.get("result", {}).get("devices", res.get("result", [])):
+                                if isinstance(dev, dict) and dev.get("id"):
+                                    cloud_device_map[dev["id"]] = dev
+
                     logger.info(f"Retrieved {len(cloud_device_map)} devices from Tuya Cloud API.")
                 except Exception as e:
                     logger.warning(f"Cloud device fetch warning: {e}")
@@ -299,6 +309,66 @@ class TuyaManager:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _test)
+
+    async def sync_all_cloud_keys(self) -> Dict[str, Any]:
+        """Queries Tuya Cloud for each device to fetch and save local keys directly."""
+        if not self.config.cloud.access_id or not self.config.cloud.access_secret:
+            return {"success": False, "error": "Tuya Cloud Access ID and Secret are not set"}
+
+        def _sync():
+            region = "eu"
+            if "tuyaus" in self.config.cloud.endpoint or "us" in self.config.cloud.endpoint:
+                region = "us"
+            elif "tuyacn" in self.config.cloud.endpoint or "cn" in self.config.cloud.endpoint:
+                region = "cn"
+            elif "tuyain" in self.config.cloud.endpoint or "in" in self.config.cloud.endpoint:
+                region = "in"
+
+            c = tinytuya.Cloud(
+                apiRegion=region,
+                apiKey=self.config.cloud.access_id,
+                apiSecret=self.config.cloud.access_secret
+            )
+            
+            # 1. Fetch devices list via TinyTuya
+            cloud_devs = c.getdevices()
+            cloud_key_map = {}
+
+            if isinstance(cloud_devs, list):
+                for d in cloud_devs:
+                    dev_id = d.get("id")
+                    key = d.get("key") or d.get("local_key")
+                    if dev_id and key:
+                        cloud_key_map[dev_id] = key
+
+            # 2. If any configured devices are missing keys, query individual device details
+            updated_count = 0
+            for dev in self.config.devices:
+                key = cloud_key_map.get(dev.id)
+                if not key:
+                    # Query individual device endpoint
+                    try:
+                        res = c.getconnectstatus(dev.id)
+                        # Try c.cloudrequest
+                        raw = c.cloudrequest(f"/v1.0/devices/{dev.id}")
+                        if raw and "result" in raw and "local_key" in raw["result"]:
+                            key = raw["result"]["local_key"]
+                    except Exception as err:
+                        logger.debug(f"Device {dev.id} key lookup error: {err}")
+
+                if key:
+                    dev.local_key = key
+                    updated_count += 1
+
+            return {
+                "success": True,
+                "total_cloud_found": len(cloud_devs) if isinstance(cloud_devs, list) else 0,
+                "keys_updated": updated_count,
+                "devices": [d.model_dump() for d in self.config.devices]
+            }
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _sync)
 
     async def set_device_brightness(self, dev_id: str, brightness: int) -> bool:
         """Sets brightness (0-100 or 0-1000)."""

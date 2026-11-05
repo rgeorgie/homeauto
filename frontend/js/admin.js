@@ -185,6 +185,49 @@ function initAdminPanel() {
     });
   }
 
+  // Fetch & Sync Cloud Keys button
+  const btnSyncKeys = document.getElementById("btn-sync-cloud-keys");
+  if (btnSyncKeys) {
+    btnSyncKeys.addEventListener("click", async () => {
+      // First save current credentials
+      const accessId = document.getElementById("tuya-cloud-id").value.trim();
+      const accessSecret = document.getElementById("tuya-cloud-secret").value.trim();
+      const endpoint = document.getElementById("tuya-cloud-endpoint").value.trim();
+
+      if (!accessId || !accessSecret) {
+        showToast("Please enter your Tuya Access ID and Access Secret first.");
+        return;
+      }
+
+      btnSyncKeys.textContent = "⏳ Fetching keys from Tuya Cloud...";
+      btnSyncKeys.disabled = true;
+
+      try {
+        // Save full config first so backend has latest credentials
+        await saveFullConfig();
+
+        const res = await fetch("/api/tuya/cloud/sync-keys", { method: "POST" });
+        const data = await res.json();
+
+        if (data.success) {
+          if (data.total_cloud_found === 0) {
+            showToast("⚠️ Cloud connected, but 0 devices found in this Cloud Project. Link your SmartLife app under Devices > Link Tuya App Account on iot.tuya.com.", 6000);
+          } else {
+            showToast(`🎉 Success! Found ${data.total_cloud_found} cloud devices and updated ${data.keys_updated} device keys!`, 5000);
+          }
+          await loadAdminConfig();
+        } else {
+          showToast(`Cloud sync error: ${data.error || 'Failed to fetch keys'}`);
+        }
+      } catch (err) {
+        showToast(`Request error: ${err.message}`);
+      } finally {
+        btnSyncKeys.textContent = "🔑 Fetch & Sync All Cloud Keys";
+        btnSyncKeys.disabled = false;
+      }
+    });
+  }
+
   // Add YouTube Preset Stream
   const btnAddPreset = document.getElementById("btn-add-yt-preset");
   if (btnAddPreset) {

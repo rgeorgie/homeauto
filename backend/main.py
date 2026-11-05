@@ -239,6 +239,23 @@ async def test_tuya_device(payload: Dict[str, Any] = Body(...)):
     version = float(payload.get("version", 3.3))
     return await tuya_mgr.test_connection(dev_id, ip, local_key, version)
 
+@app.post("/api/tuya/cloud/sync-keys")
+async def sync_tuya_cloud_keys():
+    global config
+    result = await tuya_mgr.sync_all_cloud_keys()
+    if result.get("success"):
+        # Save updated keys to config
+        save_config(config)
+        tuya_mgr.reload_config(config.tuya)
+        new_states = await tuya_mgr.get_all_states()
+        await ws_manager.broadcast({
+            "type": "state_update",
+            "data": {
+                "devices": new_states
+            }
+        })
+    return result
+
 # Bluetooth Surround Sound
 @app.get("/api/bluetooth")
 async def get_bluetooth_status():
