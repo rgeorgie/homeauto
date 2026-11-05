@@ -67,6 +67,10 @@ exec $CHROMIUM_BIN \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --touch-events=enabled \
-  --enable-features=OverlayScrollbar \
+  --disable-dev-shm-usage \
+  --enable-gpu-rasterization \
+  --ignore-gpu-blocklist \
+  --enable-features=OverlayScrollbar,TouchEvents \
   --ozone-platform-hint=auto \
+  --log-level=3 \
   --app=http://127.0.0.1:8080
