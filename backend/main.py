@@ -261,7 +261,7 @@ async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
                 version=float(dev_raw.get("version") or 3.3),
                 type=dev_raw.get("type") or "switch",
                 category=dev_raw.get("category") or "cz",
-                room=dev_raw.get("room") or "Living Room",
+                room=dev_raw.get("room") or "",
                 home=dev_raw.get("home") or ""
             )
             config.tuya.devices.append(new_dev)

@@ -124,7 +124,7 @@ function openAddDeviceWithPrefill(index) {
   if (keyInput) keyInput.value = dev.local_key || "";
   if (verInput) verInput.value = dev.version || "3.3";
   if (typeInput) typeInput.value = dev.type || "switch";
-  if (roomInput) roomInput.value = dev.room || "Living Room";
+  if (roomInput) roomInput.value = dev.room || "";
   const homeInput = document.getElementById("device-home");
   if (homeInput) homeInput.value = dev.home || "";
   if (resEl) resEl.textContent = "";
@@ -215,21 +215,29 @@ function getSelectedHome() {
   return localStorage.getItem(HOME_FILTER_KEY) || ALL_HOMES;
 }
 
+function roomLabel(dev) {
+  const r = (dev.room || "").trim();
+  return !r || r === "Default" ? "No room assigned" : r;
+}
+
 function updateHomeFilters(devices) {
   const homes = [...new Set(devices.map(d => d.home).filter(Boolean))].sort((a, b) => a.localeCompare(b));
-  const selects = document.querySelectorAll(".home-filter");
-  // Only show the selector when there is more than one home to choose from
+  const hasUnhomed = devices.some(d => !d.home);
   let selected = getSelectedHome();
   if (selected !== ALL_HOMES && !homes.includes(selected)) selected = ALL_HOMES;
 
-  selects.forEach(sel => {
-    sel.style.display = homes.length > 1 ? "" : "none";
-    // Rebuilding options every state push would close an open dropdown; only rebuild when the home list changed
-    const key = homes.join("\u0001");
-    if (sel.dataset.homes === key) { sel.value = selected; return; }
-    sel.dataset.homes = key;
-    sel.innerHTML = `<option value="${ALL_HOMES}">All homes</option>` +
-      homes.map(h => `<option value="${escapeHtml(h)}">🏠 ${escapeHtml(h)}</option>`).join("");
+  document.querySelectorAll(".home-filter").forEach(sel => {
+    // Rebuilding options on every state push would close an open dropdown; only rebuild when the list changed
+    const key = homes.join("\u0001") + (hasUnhomed ? "|u" : "");
+    if (sel.dataset.homes !== key) {
+      sel.dataset.homes = key;
+      sel.innerHTML = homes.length === 0
+        ? `<option value="${ALL_HOMES}">🏠 No homes synced yet</option>`
+        : `<option value="${ALL_HOMES}">🏠 All homes</option>` +
+          homes.map(h => `<option value="${escapeHtml(h)}">🏠 ${escapeHtml(h)}</option>`).join("");
+      sel.title = homes.length === 0 ? "Admin > Tuya Cloud > Fetch & Sync All Cloud Keys loads your Tuya homes and rooms" : "";
+    }
+    sel.disabled = homes.length === 0;
     sel.value = selected;
     sel.onchange = () => {
       localStorage.setItem(HOME_FILTER_KEY, sel.value);
@@ -242,11 +250,15 @@ function updateHomeFilters(devices) {
 function groupDevicesByRoom(devices) {
   const groups = new Map();
   devices.forEach(d => {
-    const room = d.room || "Default";
+    const room = roomLabel(d);
     if (!groups.has(room)) groups.set(room, []);
     groups.get(room).push(d);
   });
-  return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  // Named rooms alphabetically, unassigned devices last
+  return [...groups.entries()].sort((a, b) => {
+    const ua = a[0] === "No room assigned", ub = b[0] === "No room assigned";
+    return ua !== ub ? (ua ? 1 : -1) : a[0].localeCompare(b[0]);
+  });
 }
 
 function buildRoomGroupsHtml(devices) {
@@ -323,8 +335,8 @@ function renderTuyaDevices(allDevices) {
   });
 }
 
-function deviceLocation(dev, fallbackRoom = 'Default') {
-  const room = escapeHtml(dev.room || fallbackRoom);
+function deviceLocation(dev) {
+  const room = escapeHtml(roomLabel(dev));
   return dev.home ? `${escapeHtml(dev.home)} / ${room}` : room;
 }
 
@@ -417,7 +429,7 @@ function createDeviceCardHtml(dev) {
           <div class="card-header">
             <div>
               <div class="card-title">${escapeHtml(dev.name)}</div>
-              <div class="card-subtitle">${deviceLocation(dev, 'Pet Zone')} &bull; ${statusBadge}</div>
+              <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(168, 85, 247, 0.15);">🐾</div>
           </div>

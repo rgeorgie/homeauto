@@ -286,6 +286,7 @@ class TuyaManager:
         self.device_states: Dict[str, Dict[str, Any]] = {}
         self.cloud_api: Optional[Any] = None
         self._running: bool = False
+        self.location_errors: List[str] = []
         self._poll_task: Optional[asyncio.Task] = None
         self._init_cloud()
         self._init_local_devices()
@@ -472,7 +473,7 @@ class TuyaManager:
 
             # Home / room names from the Tuya Cloud (needs User ID); best effort
             try:
-                loc_map = self._fetch_home_room_map(self.config.cloud.user_id.strip() if self.config.cloud.user_id else "")
+                loc_map = self._fetch_home_room_map(self.config.cloud.user_id.strip() if self.config.cloud.user_id else "", list(cloud_device_map.values()))
             except Exception as e:
                 logger.info(f"Home/room lookup failed: {e}")
                 loc_map = {}
@@ -502,7 +503,7 @@ class TuyaManager:
                         "category": category or data.get("productKey", ""),
                         "product_name": cloud_info.get("product_name", "Local Tuya Device"),
                         "home": loc_map.get(dev_id, {}).get("home", ""),
-                        "room": loc_map.get(dev_id, {}).get("room") or "Living Room",
+                        "room": loc_map.get(dev_id, {}).get("room", ""),
                         "is_configured": dev_id in configured_ids
                     })
 
@@ -525,7 +526,7 @@ class TuyaManager:
                         "category": category,
                         "product_name": cdev.get("product_name", "Cloud Tuya Device"),
                         "home": loc_map.get(dev_id, {}).get("home", ""),
-                        "room": loc_map.get(dev_id, {}).get("room") or "Default",
+                        "room": loc_map.get(dev_id, {}).get("room", ""),
                         "is_configured": dev_id in configured_ids
                     })
 
@@ -722,10 +723,12 @@ class TuyaManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _test)
 
-    def _fetch_home_room_map(self, uid: str) -> Dict[str, Dict[str, str]]:
-        """Maps device id -> {"home": name, "room": name} using the Tuya Cloud home/room APIs. Best effort."""
+    def _fetch_home_room_map(self, uid: str, cloud_devices: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Dict[str, str]]:
+        """Maps device id -> {"home": name, "room": name} from the Tuya Cloud. Problems are kept in self.location_errors."""
         result: Dict[str, Dict[str, str]] = {}
-        if not self.cloud_api or not uid:
+        self.location_errors = []
+        if not self.cloud_api:
+            self.location_errors.append("Tuya Cloud is not connected (check Access ID / Secret)")
             return result
 
         def _get(path):
@@ -733,16 +736,23 @@ class TuyaManager:
                 res = self.cloud_api.get(path)
                 if res and res.get("success"):
                     return res.get("result")
-                logger.info(f"Tuya Cloud {path} -> {res}")
+                msg = f"{path}: {(res or {}).get('msg', 'no response')}"
             except Exception as e:
-                logger.info(f"Tuya Cloud {path} error: {e}")
+                msg = f"{path}: {e}"
+            logger.info(f"Tuya Cloud {msg}")
+            self.location_errors.append(msg)
             return None
 
-        homes = _get(f"/v1.0/users/{uid}/homes") or []
+        # Preferred: homes API (needs the User ID)
+        homes = _get(f"/v1.0/users/{uid}/homes") if uid else None
+        if not uid:
+            self.location_errors.append("Tuya User ID is not set in Admin, so homes cannot be listed")
+        home_names: Dict[Any, str] = {}
         for h in homes if isinstance(homes, list) else []:
             home_id, home_name = h.get("home_id"), h.get("name", "")
             if not home_id:
                 continue
+            home_names[str(home_id)] = home_name
             for dev in (_get(f"/v1.0/homes/{home_id}/devices") or []):
                 if isinstance(dev, dict) and dev.get("id"):
                     result[dev["id"]] = {"home": home_name, "room": ""}
@@ -756,7 +766,19 @@ class TuyaManager:
                     dev_id = d.get("id") if isinstance(d, dict) else d
                     if dev_id:
                         result.setdefault(dev_id, {"home": home_name, "room": ""})["room"] = room_name
-        logger.info(f"Tuya Cloud home/room map: {len(result)} devices")
+
+        # Fallback: every Tuya device record carries owner_id (= its home id)
+        for d in cloud_devices or []:
+            dev_id, owner = d.get("id"), d.get("owner_id")
+            if not dev_id or not owner or dev_id in result:
+                continue
+            owner = str(owner)
+            if owner not in home_names:
+                info = _get(f"/v1.0/homes/{owner}")
+                home_names[owner] = (info or {}).get("name") or f"Home {owner}"
+            result[dev_id] = {"home": home_names[owner], "room": ""}
+
+        logger.info(f"Tuya Cloud home/room map: {len(result)} devices, {len(set(v['home'] for v in result.values()))} homes")
         return result
 
     async def sync_all_cloud_keys(self) -> Dict[str, Any]:
@@ -841,15 +863,15 @@ class TuyaManager:
                                 "ip": d.get("ip", "")
                             }
 
-            home_room_map = self._fetch_home_room_map(uid)
+            home_room_map = self._fetch_home_room_map(uid, cloud_devices_list if isinstance(cloud_devices_list, list) else [])
 
             # Method 3: Direct per-device lookup via OpenAPI (/v1.0/devices/{id})
             updated_count = 0
             for dev in self.config.devices:
                 loc = home_room_map.get(dev.id)
                 if loc:
-                    dev.home = loc["home"] or dev.home
-                    dev.room = loc["room"] or dev.room
+                    dev.home = loc["home"]
+                    dev.room = loc["room"]
                 info = cloud_key_map.get(dev.id, {})
                 key = info.get("key")
                 name = info.get("name")
@@ -885,6 +907,7 @@ class TuyaManager:
                 "total_cloud_found": total_found,
                 "keys_updated": updated_count,
                 "homes_matched": len(home_room_map),
+                "location_errors": self.location_errors[:4],
                 "api_errors": api_errors,
                 "devices": [d.model_dump() for d in self.config.devices]
             }

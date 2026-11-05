@@ -95,7 +95,7 @@ function initAdminPanel() {
         local_key: document.getElementById("device-key").value.trim(),
         version: parseFloat(document.getElementById("device-version").value || "3.3"),
         type: document.getElementById("device-type").value,
-        room: document.getElementById("device-room").value.trim() || "Default",
+        room: document.getElementById("device-room").value.trim(),
         home: document.getElementById("device-home").value.trim()
       };
 
@@ -215,6 +215,11 @@ function initAdminPanel() {
             showToast("⚠️ Cloud connected, but 0 devices found in this Cloud Project. Link your SmartLife app under Devices > Link Tuya App Account on iot.tuya.com.", 6000);
           } else {
             showToast(`🎉 Success! Found ${data.total_cloud_found} cloud devices and updated ${data.keys_updated} device keys!`, 5000);
+          }
+          if (data.homes_matched > 0) {
+            showToast(`🏠 Home/room loaded for ${data.homes_matched} devices`, 4000);
+          } else {
+            showToast(`⚠️ No homes/rooms received from Tuya: ${(data.location_errors || ["unknown reason"])[0]}`, 9000);
           }
           await loadAdminConfig();
         } else {
@@ -344,7 +349,7 @@ function renderAdminDevicesTable(devices) {
       <td><code>${escapeHtml(dev.id)}</code></td>
       <td>${escapeHtml(dev.ip || 'Auto / Cloud')}</td>
       <td><span class="badge badge-type">${escapeHtml(dev.type)}</span></td>
-      <td>${dev.home ? escapeHtml(dev.home) + ' / ' : ''}${escapeHtml(dev.room || 'Default')}</td>
+      <td>${dev.home ? escapeHtml(dev.home) + ' / ' : ''}${escapeHtml(roomLabel(dev))}</td>
       <td>v${dev.version || 3.3}</td>
       <td>
         <div style="display: flex; gap: 8px;">
@@ -417,7 +422,7 @@ function editDeviceRow(id) {
   document.getElementById("device-key").value = dev.local_key || "";
   document.getElementById("device-version").value = dev.version || "3.3";
   document.getElementById("device-type").value = dev.type || "switch";
-  document.getElementById("device-room").value = dev.room || "Default";
+  document.getElementById("device-room").value = dev.room || "";
   document.getElementById("device-home").value = dev.home || "";
   document.getElementById("device-test-result").textContent = "";
 

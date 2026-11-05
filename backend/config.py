@@ -17,7 +17,7 @@ class TuyaDeviceConfig(BaseModel):
     version: float = 3.3
     type: str = "switch" # switch, light, socket, sensor, climate
     category: str = "cz"
-    room: str = "Default"
+    room: str = ""
     home: str = "" # Tuya home name (filled by cloud sync)
 
 class TuyaConfig(BaseModel):
