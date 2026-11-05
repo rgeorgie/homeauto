@@ -151,12 +151,22 @@ Open your browser at: `http://localhost:8080` (or `http://<raspberry-pi-ip>:8080
 
 ## 📺 Touchscreen Chromium Kiosk Mode
 
-To launch the 15" touchscreen in kiosk mode:
+The platform includes a dedicated [`kiosk.sh`](kiosk.sh:1) launcher compatible with both **X11** and modern Raspberry Pi OS **Wayland (Wayfire / Labwc)** compositors.
 
-```bash
-sudo systemctl start homeauto.service
-sudo systemctl start homeauto-kiosk.service
-```
+### Starting Kiosk Mode:
+1. **Autostart on Boot (Desktop Session)**:
+   The installer creates `~/.config/autostart/homeauto-kiosk.desktop`. When the Pi boots into the desktop, the 15" touchscreen automatically starts in fullscreen kiosk mode.
+
+2. **Starting / Testing manually:**
+   ```bash
+   ./kiosk.sh
+   ```
+
+3. **Or via systemd:**
+   ```bash
+   sudo systemctl restart homeauto.service
+   sudo systemctl restart homeauto-kiosk.service
+   ```
 
 ---
 

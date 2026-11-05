@@ -335,9 +335,14 @@
               <div class="card-title">Configured SmartLife / Tuya Devices</div>
               <div class="card-subtitle">Manage switches, dimmers, smart panels, and sockets</div>
             </div>
-            <button class="action-btn" id="btn-admin-add-device">
-              + Add New Device
-            </button>
+            <div style="display: flex; gap: 10px;">
+              <button class="action-btn" id="btn-admin-scan-devices" onclick="triggerDeviceScan()" style="background: rgba(255,255,255,0.08);">
+                🔍 Scan Local Network
+              </button>
+              <button class="action-btn" id="btn-admin-add-device">
+                + Add New Device
+              </button>
+            </div>
           </div>
 
           <div style="overflow-x: auto;">
@@ -726,6 +731,34 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- Discovered Devices Modal (Scan Results) -->
+  <div id="modal-scan-results" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 720px; max-height: 85vh; display: flex; flex-direction: column;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <h3 style="font-size: 20px; font-weight: 700;">📡 Discovered Tuya Devices</h3>
+          <span id="scan-found-count" class="badge badge-type" style="font-size: 13px;">0 Found</span>
+        </div>
+        <button id="btn-close-scan-modal" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer;">&times;</button>
+      </div>
+
+      <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 16px;">
+        These devices were discovered on your local network. You can import all of them to your dashboard or customize their local keys individually.
+      </p>
+
+      <div id="scan-results-container" style="flex: 1; overflow-y: auto; padding-right: 6px; margin-bottom: 18px; max-height: 50vh;">
+        <!-- Rendered by tuya_cards.js -->
+      </div>
+
+      <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid var(--border-color); padding-top: 16px;">
+        <span style="font-size: 12px; color: var(--text-muted);">Local control requires a 16-character local key</span>
+        <button class="action-btn" id="btn-import-all-discovered" style="background: linear-gradient(135deg, #10b981, #059669);">
+          ⚡ Import All to Dashboard
+        </button>
+      </div>
     </div>
   </div>
 

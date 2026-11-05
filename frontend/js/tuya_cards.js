@@ -1,22 +1,158 @@
 // SmartLife / Tuya Device Cards Component
 
+let discoveredDevicesCache = [];
+
 function initTuyaCards() {
   const scanBtn = document.getElementById("btn-scan-devices");
+  const modalScan = document.getElementById("modal-scan-results");
+  const btnCloseScan = document.getElementById("btn-close-scan-modal");
+  const btnImportAll = document.getElementById("btn-import-all-discovered");
+
   if (scanBtn) {
-    scanBtn.addEventListener("click", async () => {
-      scanBtn.textContent = "Scanning network...";
-      scanBtn.disabled = true;
-      try {
-        const res = await fetch("/api/devices/scan", { method: "POST" });
-        const data = await res.json();
-        showToast(`Scan complete: Found ${data.local.length} local and ${data.cloud.length} cloud devices.`);
-      } catch (err) {
-        showToast("Error scanning devices");
-      } finally {
-        scanBtn.textContent = "🔍 Scan Local Devices";
-        scanBtn.disabled = false;
-      }
+    scanBtn.addEventListener("click", () => triggerDeviceScan());
+  }
+
+  if (btnCloseScan && modalScan) {
+    btnCloseScan.addEventListener("click", () => {
+      modalScan.style.display = "none";
     });
+  }
+
+  if (btnImportAll) {
+    btnImportAll.addEventListener("click", () => importAllDiscoveredDevices());
+  }
+}
+
+async function triggerDeviceScan() {
+  const scanBtns = document.querySelectorAll("#btn-scan-devices, #btn-admin-scan-devices");
+  scanBtns.forEach(b => {
+    b.textContent = "🔍 Scanning network (5s)...";
+    b.disabled = true;
+  });
+
+  try {
+    const res = await fetch("/api/devices/scan", { method: "POST" });
+    const data = await res.json();
+    discoveredDevicesCache = data.discovered || [];
+
+    if (discoveredDevicesCache.length === 0) {
+      showToast("Scan finished: No Tuya devices found on local network.", 4000);
+    } else {
+      showToast(`Scan complete: Found ${discoveredDevicesCache.length} device${discoveredDevicesCache.length === 1 ? '' : 's'}!`);
+      showDiscoveredDevicesModal(discoveredDevicesCache);
+    }
+  } catch (err) {
+    showToast(`Error scanning devices: ${err.message}`);
+  } finally {
+    scanBtns.forEach(b => {
+      b.textContent = "🔍 Scan Local Devices";
+      b.disabled = false;
+    });
+  }
+}
+
+function showDiscoveredDevicesModal(devices) {
+  const modal = document.getElementById("modal-scan-results");
+  const container = document.getElementById("scan-results-container");
+  const countBadge = document.getElementById("scan-found-count");
+
+  if (!modal || !container) return;
+
+  if (countBadge) countBadge.textContent = `${devices.length} Found`;
+
+  container.innerHTML = devices.map((dev, idx) => {
+    const isAdded = dev.is_configured;
+    const hasKey = Boolean(dev.local_key);
+
+    return `
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 14px 16px; background: rgba(255,255,255,0.03); border: 1px solid var(--border-color); border-radius: 12px; margin-bottom: 10px; flex-wrap: wrap; gap: 10px;">
+        <div style="flex: 1; min-width: 220px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <strong style="font-size: 15px;">${escapeHtml(dev.name)}</strong>
+            <span class="badge badge-type">${escapeHtml(dev.type)}</span>
+            ${isAdded ? `<span style="color: var(--accent-green); font-size: 11px;">● Configured</span>` : ''}
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;">
+            IP: <code>${escapeHtml(dev.ip || 'Unknown')}</code> &bull; ID: <code>${escapeHtml(dev.id)}</code> &bull; v${dev.version || 3.3}
+          </div>
+          <div style="font-size: 11px; color: ${hasKey ? 'var(--accent-green)' : 'var(--accent-amber)'}; margin-top: 2px;">
+            ${hasKey ? '🔑 Local Key Available' : '⚠️ No Local Key yet (Enter key or use Cloud sync)'}
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; align-items: center;">
+          ${!hasKey ? `
+            <input type="text" id="scan-key-input-${idx}" placeholder="Local Key" value="${dev.local_key || ''}" style="width: 130px; padding: 8px 10px; font-size: 12px; border-radius: 8px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.4); color: #fff;">
+          ` : ''}
+          
+          <button class="action-btn" style="padding: 8px 16px; font-size: 13px; background: ${isAdded ? 'rgba(255,255,255,0.1)' : 'var(--accent-blue)'};" onclick="importSingleDiscoveredDevice(${idx})">
+            ${isAdded ? '🔄 Update' : '➕ Add to Dashboard'}
+          </button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  modal.style.display = "flex";
+}
+
+async function importSingleDiscoveredDevice(index) {
+  const dev = discoveredDevicesCache[index];
+  if (!dev) return;
+
+  const keyInput = document.getElementById(`scan-key-input-${index}`);
+  if (keyInput && keyInput.value.trim()) {
+    dev.local_key = keyInput.value.trim();
+  }
+
+  showToast(`Adding ${dev.name} to dashboard...`);
+  try {
+    const res = await fetch("/api/devices/import-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ devices: [dev] })
+    });
+    if (res.ok) {
+      showToast(`🎉 ${dev.name} added to your dashboard!`);
+      dev.is_configured = true;
+      showDiscoveredDevicesModal(discoveredDevicesCache);
+      if (typeof loadAdminConfig === "function") loadAdminConfig();
+    } else {
+      showToast("Failed to add device");
+    }
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+async function importAllDiscoveredDevices() {
+  if (!discoveredDevicesCache || discoveredDevicesCache.length === 0) return;
+
+  // Grab any local keys entered in inputs
+  discoveredDevicesCache.forEach((dev, idx) => {
+    const keyInput = document.getElementById(`scan-key-input-${idx}`);
+    if (keyInput && keyInput.value.trim()) {
+      dev.local_key = keyInput.value.trim();
+    }
+  });
+
+  showToast(`Importing ${discoveredDevicesCache.length} devices...`);
+  try {
+    const res = await fetch("/api/devices/import-batch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ devices: discoveredDevicesCache })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      showToast(`🎉 Imported ${data.imported_count} devices! Displaying on dashboard.`);
+      document.getElementById("modal-scan-results").style.display = "none";
+      if (typeof loadAdminConfig === "function") loadAdminConfig();
+    } else {
+      showToast("Error importing devices batch");
+    }
+  } catch (err) {
+    showToast(`Import error: ${err.message}`);
   }
 }
 
@@ -26,8 +162,10 @@ function renderTuyaDevices(devices) {
   if (!grid) return;
 
   if (!devices || devices.length === 0) {
-    grid.innerHTML = `<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--text-muted);">
-      No Tuya/SmartLife devices configured. Add devices in <code>config.yaml</code> or click Scan.
+    grid.innerHTML = `<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 32px;">
+      <div style="font-size: 32px; margin-bottom: 8px;">📡</div>
+      <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 4px;">No SmartLife / Tuya Devices Displayed Yet</div>
+      <div>Click <strong>"🔍 Scan Local Devices"</strong> above to auto-discover your 10 devices and add them to the screen!</div>
     </div>`;
     if (quickGrid) quickGrid.innerHTML = grid.innerHTML;
     return;
@@ -53,7 +191,7 @@ function renderTuyaDevices(devices) {
 
 function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
-  const icon = isLight ? "💡" : (dev.type === "socket" ? "🔌" : "⚡");
+  const icon = isLight ? "💡" : (dev.type === "socket" ? "🔌" : (dev.type === "climate" ? "🌡️" : "⚡"));
   const statusBadge = dev.online ? `<span style="color: var(--accent-green); font-size: 12px;">● Online</span>` : `<span style="color: var(--text-muted); font-size: 12px;">○ Offline</span>`;
 
   return `

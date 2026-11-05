@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=HomeAuto Kiosk
+Comment=15" Touchscreen Dashboard Kiosk
+Exec=/home/pi/homeauto/kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true

@@ -6,19 +6,11 @@ Wants=graphical.target
 [Service]
 Type=simple
 User=pi
+WorkingDirectory=/home/pi/homeauto
 Environment=DISPLAY=:0
+Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=XAUTHORITY=/home/pi/.Xauthority
-ExecStartPre=/bin/sleep 3
-ExecStart=/usr/bin/chromium-browser \
-  --noerrdialogs \
-  --disable-infobars \
-  --kiosk \
-  --app=http://localhost:8080 \
-  --check-for-update-interval=31536000 \
-  --disable-pinch \
-  --overscroll-history-navigation=0 \
-  --enable-features=OverlayScrollbar \
-  --touch-events=enabled
+ExecStart=/home/pi/homeauto/kiosk.sh
 Restart=always
 RestartSec=5
 

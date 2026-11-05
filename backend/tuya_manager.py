@@ -84,48 +84,115 @@ class TuyaManager:
         except Exception as e:
             logger.error(f"Error registering local Tuya device {dev_conf.name}: {e}")
 
-    async def scan_local_network(self) -> List[Dict[str, Any]]:
-        """Scans local subnet for Tuya broadcasts."""
-        def _scan():
-            try:
-                devices = tinytuya.deviceScan(False, 5)
-                return devices
-            except Exception as e:
-                logger.error(f"Error scanning local Tuya network: {e}")
-                return []
-        
-        loop = asyncio.get_event_loop()
-        raw_devices = await loop.run_in_executor(None, _scan)
-        results = []
-        if isinstance(raw_devices, dict):
-            for ip, data in raw_devices.items():
-                results.append({
-                    "ip": ip,
-                    "gwId": data.get("gwId"),
-                    "version": data.get("version"),
-                    "productKey": data.get("productKey")
-                })
-        return results
+    async def scan_and_discover_devices(self) -> List[Dict[str, Any]]:
+        """Scans local network and optionally queries cloud to return unified list of discovered devices."""
+        def _perform_discovery():
+            discovered = []
+            cloud_device_map = {}
 
-    async def fetch_cloud_devices(self) -> List[Dict[str, Any]]:
-        """Fetches device list from Tuya Cloud."""
-        if not self.cloud_api:
-            return []
-        
-        def _fetch():
+            # Step 1: Query Tuya Cloud via tinytuya.Cloud if credentials exist
+            if self.config.cloud.access_id and self.config.cloud.access_secret:
+                try:
+                    region = "eu"
+                    if "tuyaus" in self.config.cloud.endpoint:
+                        region = "us"
+                    elif "tuyacn" in self.config.cloud.endpoint:
+                        region = "cn"
+                    elif "tuyain" in self.config.cloud.endpoint:
+                        region = "in"
+
+                    c = tinytuya.Cloud(
+                        apiRegion=region,
+                        apiKey=self.config.cloud.access_id,
+                        apiSecret=self.config.cloud.access_secret
+                    )
+                    c_devices = c.getdevices()
+                    if isinstance(c_devices, list):
+                        for dev in c_devices:
+                            dev_id = dev.get("id")
+                            if dev_id:
+                                cloud_device_map[dev_id] = dev
+                    logger.info(f"Retrieved {len(cloud_device_map)} devices from Tuya Cloud API.")
+                except Exception as e:
+                    logger.warning(f"Cloud device fetch warning: {e}")
+
+            # Step 2: Scan local network broadcasts
             try:
-                uid = self.config.cloud.user_id
-                if uid:
-                    res = self.cloud_api.get(f"/v1.0/users/{uid}/devices")
-                else:
-                    res = self.cloud_api.get("/v1.0/devices")
-                return res.get("result", []) if res.get("success") else []
+                local_raw = tinytuya.deviceScan(False, 6)
             except Exception as e:
-                logger.error(f"Error fetching devices from Tuya Cloud: {e}")
-                return []
+                logger.error(f"Local Tuya scan error: {e}")
+                local_raw = {}
+
+            configured_ids = {d.id for d in self.config.devices}
+
+            # Merge local devices
+            if isinstance(local_raw, dict):
+                for ip, data in local_raw.items():
+                    dev_id = data.get("gwId") or data.get("id")
+                    if not dev_id:
+                        continue
+
+                    cloud_info = cloud_device_map.get(dev_id, {})
+                    category = cloud_info.get("category", "")
+                    
+                    # Deduce device type
+                    dev_type = "switch"
+                    if category in ["dj", "dd", "dc", "xdd"] or "light" in cloud_info.get("product_name", "").lower():
+                        dev_type = "light"
+                    elif category in ["cz", "pc"] or "socket" in cloud_info.get("product_name", "").lower() or "plug" in cloud_info.get("product_name", "").lower():
+                        dev_type = "socket"
+                    elif category in ["wk", "rs"] or "thermostat" in cloud_info.get("product_name", "").lower():
+                        dev_type = "climate"
+                    elif category in ["cg", "wsdcg"] or "sensor" in cloud_info.get("product_name", "").lower():
+                        dev_type = "sensor"
+
+                    name = cloud_info.get("name") or f"Tuya Device {dev_id[-4:]}"
+                    local_key = cloud_info.get("key") or ""
+                    version = float(data.get("version") or 3.3)
+
+                    discovered.append({
+                        "id": dev_id,
+                        "name": name,
+                        "ip": ip,
+                        "local_key": local_key,
+                        "version": version,
+                        "type": dev_type,
+                        "category": category or data.get("productKey", ""),
+                        "product_name": cloud_info.get("product_name", "Local Tuya Device"),
+                        "room": "Living Room",
+                        "is_configured": dev_id in configured_ids
+                    })
+
+            # Add any cloud-only devices that weren't discovered by UDP broadcast
+            seen_ids = {d["id"] for d in discovered}
+            for dev_id, cdev in cloud_device_map.items():
+                if dev_id not in seen_ids:
+                    category = cdev.get("category", "")
+                    dev_type = "switch"
+                    if category in ["dj", "dd", "dc", "xdd"]:
+                        dev_type = "light"
+                    elif category in ["cz", "pc"]:
+                        dev_type = "socket"
+                    elif category in ["wk"]:
+                        dev_type = "climate"
+
+                    discovered.append({
+                        "id": dev_id,
+                        "name": cdev.get("name") or f"Device {dev_id[-4:]}",
+                        "ip": cdev.get("ip") or "",
+                        "local_key": cdev.get("key") or "",
+                        "version": 3.3,
+                        "type": dev_type,
+                        "category": category,
+                        "product_name": cdev.get("product_name", "Cloud Tuya Device"),
+                        "room": "Default",
+                        "is_configured": dev_id in configured_ids
+                    })
+
+            return discovered
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _fetch)
+        return await loop.run_in_executor(None, _perform_discovery)
 
     def _sync_poll_device(self, dev_id: str) -> Dict[str, Any]:
         dev = self.local_devices.get(dev_id)

@@ -172,9 +172,56 @@ async def set_device_brightness(device_id: str, payload: Dict[str, int] = Body(.
 
 @app.post("/api/devices/scan")
 async def scan_tuya_devices():
-    local_devs = await tuya_mgr.scan_local_network()
-    cloud_devs = await tuya_mgr.fetch_cloud_devices()
-    return {"local": local_devs, "cloud": cloud_devs}
+    discovered = await tuya_mgr.scan_and_discover_devices()
+    return {"discovered": discovered, "count": len(discovered)}
+
+@app.post("/api/devices/import-batch")
+async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
+    global config
+    devices_to_import = payload.get("devices", [])
+    if not devices_to_import:
+        raise HTTPException(status_code=400, detail="No devices provided for import")
+    
+    from backend.config import TuyaDeviceConfig
+    imported_count = 0
+    existing_ids = {d.id for d in config.tuya.devices}
+
+    for dev_raw in devices_to_import:
+        dev_id = dev_raw.get("id")
+        if not dev_id:
+            continue
+        
+        # If already configured, update IP / key
+        if dev_id in existing_ids:
+            for idx, existing in enumerate(config.tuya.devices):
+                if existing.id == dev_id:
+                    if dev_raw.get("ip"):
+                        existing.ip = dev_raw.get("ip")
+                    if dev_raw.get("local_key"):
+                        existing.local_key = dev_raw.get("local_key")
+                    config.tuya.devices[idx] = existing
+        else:
+            new_dev = TuyaDeviceConfig(
+                id=dev_id,
+                name=dev_raw.get("name") or f"Tuya Device {dev_id[-4:]}",
+                ip=dev_raw.get("ip") or "",
+                local_key=dev_raw.get("local_key") or "",
+                version=float(dev_raw.get("version") or 3.3),
+                type=dev_raw.get("type") or "switch",
+                category=dev_raw.get("category") or "cz",
+                room=dev_raw.get("room") or "Living Room"
+            )
+            config.tuya.devices.append(new_dev)
+            existing_ids.add(dev_id)
+            imported_count += 1
+
+    save_config(config)
+    tuya_mgr.reload_config(config.tuya)
+    return {
+        "status": "ok",
+        "imported_count": imported_count,
+        "total_devices": len(config.tuya.devices)
+    }
 
 @app.post("/api/devices/test")
 async def test_tuya_device(payload: Dict[str, Any] = Body(...)):
