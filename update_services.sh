@@ -13,6 +13,12 @@ sudo systemctl disable homeauto.service homeauto-kiosk.service 2>/dev/null || tr
 sudo rm -f /etc/systemd/system/homeauto.service /etc/systemd/system/homeauto-kiosk.service
 sudo systemctl daemon-reload
 
+# 2. Kill any old lingering python backend processes
+echo "==> Stopping any old backend instances..."
+sudo pkill -9 -f "backend.main" 2>/dev/null || true
+pkill -9 -f "backend.main" 2>/dev/null || true
+sleep 1
+
 # 2. Enable lingering so user services start at boot without manual login
 echo "==> Enabling user lingering for $USER_NAME..."
 loginctl enable-linger "$USER_NAME"
