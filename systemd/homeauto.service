@@ -10,6 +10,8 @@ ExecStart=/home/pi/homeauto/venv/bin/python -m backend.main
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
+Environment=XDG_RUNTIME_DIR=/run/user/1000
+Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native
 
 [Install]
 WantedBy=multi-user.target

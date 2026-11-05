@@ -39,6 +39,18 @@ function initBluetoothController() {
       });
     });
   }
+
+  const testSoundBtn = document.getElementById("btn-test-bt-sound");
+  if (testSoundBtn) {
+    testSoundBtn.addEventListener("click", async () => {
+      showToast("Playing test audio chime on soundbar...");
+      try {
+        await fetch("/api/bluetooth/test-sound", { method: "POST" });
+      } catch (err) {
+        showToast("Error testing sound");
+      }
+    });
+  }
 }
 
 function renderBluetoothStatus(bt) {

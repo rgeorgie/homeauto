@@ -170,6 +170,22 @@ async def set_device_brightness(device_id: str, payload: Dict[str, int] = Body(.
         raise HTTPException(status_code=500, detail="Failed to adjust brightness")
     return {"status": "ok", "device_id": device_id, "brightness": brightness}
 
+@app.post("/api/devices/{device_id}/temperature")
+async def set_device_temperature(device_id: str, payload: Dict[str, float] = Body(...)):
+    temperature = payload.get("temperature", 21.0)
+    success = await tuya_mgr.set_device_temperature(device_id, float(temperature))
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to set target temperature")
+    return {"status": "ok", "device_id": device_id, "target_temperature": temperature}
+
+@app.post("/api/devices/{device_id}/feed")
+async def feed_pet_endpoint(device_id: str, payload: Dict[str, int] = Body(default={"portions": 1})):
+    portions = payload.get("portions", 1)
+    success = await tuya_mgr.feed_pet(device_id, int(portions))
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to trigger pet feeding")
+    return {"status": "ok", "device_id": device_id, "portions": portions}
+
 @app.post("/api/devices/scan")
 async def scan_tuya_devices():
     discovered = await tuya_mgr.scan_and_discover_devices()
@@ -289,6 +305,14 @@ async def set_bluetooth_volume(payload: Dict[str, int] = Body(...)):
     vol = payload.get("volume", 70)
     new_vol = await bt_mgr.set_volume(vol)
     return {"volume": new_vol}
+
+@app.post("/api/bluetooth/test-sound")
+async def test_bluetooth_sound():
+    # Ensure sink is routed to BT
+    if bt_mgr.config.target_mac:
+        await bt_mgr.switch_to_bluetooth_sink(bt_mgr.config.target_mac)
+    success = await bt_mgr.play_test_tone()
+    return {"status": "ok" if success else "failed"}
 
 # Kodi Integration
 @app.get("/api/kodi")

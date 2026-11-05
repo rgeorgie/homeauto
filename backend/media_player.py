@@ -56,17 +56,31 @@ class MediaPlayer:
         self.is_playing = True
 
         # Check if mpv is available on the Pi/system
-        if shutil.which("mpv") and direct_url:
+        if shutil.which("mpv"):
             def _start_mpv():
                 try:
+                    import os
+                    env = os.environ.copy()
+                    uid = os.getuid()
+                    env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
+                    env["PULSE_SERVER"] = f"unix:/run/user/{uid}/pulse/native"
+
+                    target_play_url = direct_url or url_or_preset
                     cmd = [
                         "mpv",
                         "--no-video",
                         f"--volume={self.volume}",
-                        "--really-quiet",
-                        direct_url
+                        "--ytdl=yes",
+                        "--ytdl-format=bestaudio/best",
+                        "--gapless-audio=yes",
+                        target_play_url
                     ]
-                    self._mpv_process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    self._mpv_process = subprocess.Popen(
+                        cmd,
+                        env=env,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
+                    )
                     logger.info(f"Started mpv playback for: {self.current_title}")
                 except Exception as e:
                     logger.error(f"Failed to start mpv: {e}")

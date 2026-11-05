@@ -85,16 +85,12 @@ def fetch_and_save_keys():
             key = d.get("key") or d.get("local_key") or ""
             ip = d.get("ip") or ""
             category = d.get("category", "")
+            pname = d.get("product_name", "")
             
-            dev_type = "switch"
-            if category in ["dj", "dd", "dc", "xdd"]:
-                dev_type = "light"
-            elif category in ["cz", "pc"]:
-                dev_type = "socket"
-            elif category in ["wk"]:
-                dev_type = "climate"
+            from backend.tuya_manager import resolve_tuya_device_type
+            dev_type = resolve_tuya_device_type(category, pname, name)
 
-            print(f"  • {name} | ID: {dev_id} | Key: {'*' * 12 + key[-4:] if key else 'NO KEY'} | Type: {dev_type}")
+            print(f"  • {name} | ID: {dev_id} | Key: {'*' * 12 + key[-4:] if key else 'NO KEY'} | Type: {dev_type} ({category})")
 
             saved_devices.append({
                 "id": dev_id,

@@ -121,7 +121,54 @@ class BluetoothAudioManager:
             self.config.target_mac = mac
             self.is_connected = True
             logger.info(f"Successfully connected to Bluetooth device: {mac}")
+            # Switch default audio sink to Bluetooth
+            await asyncio.sleep(1)
+            await self.switch_to_bluetooth_sink(mac)
         return success
+
+    async def switch_to_bluetooth_sink(self, mac: str) -> bool:
+        """Sets the connected Bluetooth sink as the system default audio sink."""
+        formatted_mac = mac.replace(":", "_").upper()
+
+        def _switch():
+            try:
+                # 1. Look for bluez sink in pactl
+                res = subprocess.run(["pactl", "list", "short", "sinks"], capture_output=True, text=True, timeout=3)
+                for line in res.stdout.splitlines():
+                    if formatted_mac in line or "bluez" in line:
+                        parts = line.split()
+                        if len(parts) >= 2:
+                            sink_name = parts[1]
+                            subprocess.run(["pactl", "set-default-sink", sink_name], capture_output=True)
+                            subprocess.run(["pactl", "set-sink-volume", sink_name, f"{self.volume}%"], capture_output=True)
+                            logger.info(f"Switched system default audio sink to Bluetooth: {sink_name}")
+                            return True
+            except Exception as e:
+                logger.debug(f"Error switching audio sink: {e}")
+            return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _switch)
+
+    async def play_test_tone(self) -> bool:
+        """Plays a test tone or chime on the active audio output."""
+        def _play():
+            try:
+                # Try pactl / paplay / aplay / speaker-test
+                cmd = ["speaker-test", "-t", "sine", "-f", "440", "-l", "1", "-p", "1"]
+                subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                return True
+            except Exception:
+                try:
+                    # Fallback to mpv synthesizing tone
+                    cmd = ["mpv", "--no-video", "--length=2", "lavfi://[sine=frequency=440:duration=2]"]
+                    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    return True
+                except Exception:
+                    return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _play)
 
     async def disconnect_device(self, mac: Optional[str] = None) -> bool:
         """Disconnects Bluetooth device."""

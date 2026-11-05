@@ -13,6 +13,44 @@ from backend.config import TuyaConfig, TuyaDeviceConfig
 
 logger = logging.getLogger("HomeAuto.Tuya")
 
+def resolve_tuya_device_type(category: str = "", product_name: str = "", name: str = "") -> str:
+    """Accurately resolves device type based on Tuya Category code and names."""
+    cat = (category or "").lower().strip()
+    pname = (product_name or "").lower().strip()
+    dname = (name or "").lower().strip()
+    combined = f"{cat} {pname} {dname}"
+
+    # 1. Pet Feeder / Pet Water Fountain / Cat Care
+    if cat in ["cwf", "cwyq", "cwwsq", "cwsb", "pet"] or any(k in combined for k in ["pet", "feeder", "cat", "dog", "fountain", "kibble"]):
+        return "pet_feeder"
+
+    # 2. Climate / Thermostats / Heaters / Radiator TRVs
+    if cat in ["wk", "wkf", "rs", "qn", "tc", "wkjsq"] or any(k in combined for k in ["thermostat", "heat", "heater", "climate", "trv", "valve", "underfloor"]):
+        return "climate"
+
+    # 3. Lights / Bulbs / Strips / Lamps
+    if cat in ["dj", "dd", "dc", "xdd", "tyndj", "sbd", "tgq"] or any(k in combined for k in ["light", "bulb", "strip", "lamp", "led", "ceiling", "spotlight"]):
+        return "light"
+
+    # 4. Curtains / Blinds / Shutters / Garage
+    if cat in ["cl", "clkg", "ckmkq"] or any(k in combined for k in ["curtain", "blind", "shutter", "roller", "garage"]):
+        return "curtain"
+
+    # 5. Sensors
+    if cat in ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir"] or any(k in combined for k in ["sensor", "detector", "motion", "door", "window", "leak", "smoke"]):
+        return "sensor"
+
+    # 6. Sockets / Plugs / Power Strips
+    if cat in ["cz", "pc"] or any(k in combined for k in ["socket", "plug", "outlet", "power strip"]):
+        return "socket"
+
+    # 7. Fans / Air Purifiers / Humidifiers
+    if cat in ["fs", "fsd", "jsq"] or any(k in combined for k in ["fan", "humidifier", "purifier"]):
+        return "fan"
+
+    return "switch"
+
+
 class TuyaManager:
     def __init__(self, config: TuyaConfig):
         self.config = config
@@ -169,19 +207,9 @@ class TuyaManager:
 
                     cloud_info = cloud_device_map.get(dev_id, {})
                     category = cloud_info.get("category", "")
-                    
-                    # Deduce device type
-                    dev_type = "switch"
-                    if category in ["dj", "dd", "dc", "xdd"] or "light" in cloud_info.get("product_name", "").lower():
-                        dev_type = "light"
-                    elif category in ["cz", "pc"] or "socket" in cloud_info.get("product_name", "").lower() or "plug" in cloud_info.get("product_name", "").lower():
-                        dev_type = "socket"
-                    elif category in ["wk", "rs"] or "thermostat" in cloud_info.get("product_name", "").lower():
-                        dev_type = "climate"
-                    elif category in ["cg", "wsdcg"] or "sensor" in cloud_info.get("product_name", "").lower():
-                        dev_type = "sensor"
-
                     name = cloud_info.get("name") or f"Tuya Device {dev_id[-4:]}"
+                    pname = cloud_info.get("product_name", "")
+                    dev_type = resolve_tuya_device_type(category, pname, name)
                     local_key = cloud_info.get("key") or ""
                     version = float(data.get("version") or 3.3)
 
@@ -203,13 +231,9 @@ class TuyaManager:
             for dev_id, cdev in cloud_device_map.items():
                 if dev_id not in seen_ids:
                     category = cdev.get("category", "")
-                    dev_type = "switch"
-                    if category in ["dj", "dd", "dc", "xdd"]:
-                        dev_type = "light"
-                    elif category in ["cz", "pc"]:
-                        dev_type = "socket"
-                    elif category in ["wk"]:
-                        dev_type = "climate"
+                    name = cdev.get("name") or f"Device {dev_id[-4:]}"
+                    pname = cdev.get("product_name", "")
+                    dev_type = resolve_tuya_device_type(category, pname, name)
 
                     discovered.append({
                         "id": dev_id,
@@ -246,16 +270,46 @@ class TuyaManager:
                     is_on = bool(dps['20'])
                 
                 brightness = 100
-                if '2' in dps:
+                if '2' in dps and isinstance(dps['2'], int) and dev_id in self.device_states and self.device_states[dev_id].get("type") in ["light", "bulb"]:
                     brightness = int(dps['2'])
-                elif '22' in dps:
+                elif '22' in dps and isinstance(dps['22'], int):
                     brightness = int(dps['22'])
+
+                # Thermostat / Heating DPS extraction
+                target_temp = None
+                current_temp = None
+                mode = dps.get('4') or dps.get('2') or 'manual'
+
+                # Target temp DPS candidates: '2', '16', '101', '24'
+                for dps_key in ['2', '16', '101', '24', '103']:
+                    if dps_key in dps and isinstance(dps[dps_key], (int, float)):
+                        val = float(dps[dps_key])
+                        if 5 <= val <= 45: # Standard Celsius range
+                            target_temp = round(val, 1)
+                            break
+                        elif 50 <= val <= 450: # 10x scaled Celsius (e.g., 215 = 21.5°C)
+                            target_temp = round(val / 10.0, 1)
+                            break
+
+                # Current temp DPS candidates: '3', '24', '102', '104', '28'
+                for dps_key in ['3', '24', '102', '104', '28', '115']:
+                    if dps_key in dps and isinstance(dps[dps_key], (int, float)):
+                        val = float(dps[dps_key])
+                        if 0 <= val <= 60:
+                            current_temp = round(val, 1)
+                            break
+                        elif 0 <= val <= 600: # 10x scaled (e.g., 224 = 22.4°C)
+                            current_temp = round(val / 10.0, 1)
+                            break
 
                 state = self.device_states.get(dev_id, {})
                 state.update({
                     "online": True,
                     "is_on": is_on,
                     "brightness": brightness,
+                    "current_temperature": current_temp if current_temp is not None else state.get("current_temperature", 21.0),
+                    "target_temperature": target_temp if target_temp is not None else state.get("target_temperature", 22.0),
+                    "mode": str(mode) if mode else "manual",
                     "dps": dps,
                     "error": None
                 })
@@ -448,6 +502,80 @@ class TuyaManager:
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync)
+
+    async def set_device_temperature(self, dev_id: str, temperature: float) -> bool:
+        """Sets target desired temperature for thermostat/heating device."""
+        dev = self.local_devices.get(dev_id)
+        if not dev:
+            return False
+
+        def _set_temp():
+            try:
+                state = self.device_states.get(dev_id, {})
+                dps = state.get("dps", {})
+
+                # Find which DPS key is used for target temperature
+                target_key = None
+                scale_10 = False
+
+                for key in ['2', '16', '101', '24', '103']:
+                    if key in dps and isinstance(dps[key], (int, float)):
+                        target_key = int(key)
+                        if dps[key] > 45: # 10x scale
+                            scale_10 = True
+                        break
+
+                if target_key is None:
+                    target_key = 2 # standard default for Tuya thermostat
+
+                val = int(round(temperature * 10)) if scale_10 else int(round(temperature))
+                dev.set_value(target_key, val)
+                logger.info(f"Set target temperature for {dev_id} to {temperature}°C (DPS {target_key}={val})")
+                return True
+            except Exception as e:
+                logger.error(f"Error setting temperature for {dev_id}: {e}")
+                return False
+
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, _set_temp)
+        if success and dev_id in self.device_states:
+            self.device_states[dev_id]["target_temperature"] = round(temperature, 1)
+        return success
+
+    async def feed_pet(self, dev_id: str, portions: int = 1) -> bool:
+        """Dispenses food for a smart pet feeder."""
+        dev = self.local_devices.get(dev_id)
+        if not dev:
+            return False
+
+        def _feed():
+            try:
+                state = self.device_states.get(dev_id, {})
+                dps = state.get("dps", {})
+
+                # Check which DPS controls manual feed
+                feed_dps = None
+                for key in ['3', '1', '101', '4', '2']:
+                    if key in dps:
+                        feed_dps = int(key)
+                        break
+
+                if feed_dps is None:
+                    feed_dps = 3 # standard Tuya pet feeder manual_feed DPS
+
+                dev.set_value(feed_dps, portions)
+                logger.info(f"Dispensed {portions} portion(s) for pet feeder {dev_id} (DPS {feed_dps})")
+                return True
+            except Exception as e:
+                logger.error(f"Error feeding pet on {dev_id}: {e}")
+                return False
+
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(None, _feed)
+        if success and dev_id in self.device_states:
+            import datetime
+            self.device_states[dev_id]["last_fed"] = datetime.datetime.now().strftime("%H:%M")
+        return success
 
     async def set_device_brightness(self, dev_id: str, brightness: int) -> bool:
         """Sets brightness (0-100 or 0-1000)."""

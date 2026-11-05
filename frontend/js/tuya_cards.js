@@ -215,7 +215,7 @@ function renderTuyaDevices(devices) {
     grid.innerHTML = `<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 32px;">
       <div style="font-size: 32px; margin-bottom: 8px;">📡</div>
       <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 4px;">No SmartLife / Tuya Devices Displayed Yet</div>
-      <div>Click <strong>"🔍 Scan Local Devices"</strong> above to auto-discover your 10 devices and add them to the screen!</div>
+      <div>Click <strong>"🔍 Scan Local Devices"</strong> above to auto-discover your devices and add them to the screen!</div>
     </div>`;
     if (quickGrid) quickGrid.innerHTML = grid.innerHTML;
     return;
@@ -225,23 +225,59 @@ function renderTuyaDevices(devices) {
   grid.innerHTML = html;
   if (quickGrid) quickGrid.innerHTML = html;
 
-  // Bind event listeners for toggles and sliders
+  // Bind event listeners for toggles, sliders, and climate steppers
   devices.forEach(dev => {
+    // Power Toggle
     const toggleBtn = document.querySelectorAll(`.device-toggle-btn[data-id="${dev.id}"]`);
     toggleBtn.forEach(btn => {
       btn.onclick = () => toggleDevicePower(dev.id, !dev.is_on);
     });
 
-    const slider = document.querySelectorAll(`.device-brightness-slider[data-id="${dev.id}"]`);
-    slider.forEach(s => {
+    // Light Brightness Slider
+    const lightSlider = document.querySelectorAll(`.device-brightness-slider[data-id="${dev.id}"]`);
+    lightSlider.forEach(s => {
       s.onchange = (e) => setDeviceBrightness(dev.id, parseInt(e.target.value));
+    });
+
+    // Climate Temperature Slider
+    const tempSlider = document.querySelectorAll(`.device-temp-slider[data-id="${dev.id}"]`);
+    tempSlider.forEach(s => {
+      s.oninput = (e) => {
+        const targetValEl = document.querySelectorAll(`.temp-target-val[data-id="${dev.id}"]`);
+        targetValEl.forEach(el => el.textContent = `${parseFloat(e.target.value).toFixed(1)}°C`);
+      };
+      s.onchange = (e) => setDeviceTemperature(dev.id, parseFloat(e.target.value));
+    });
+
+    // Climate Stepper Buttons (+ / -)
+    const btnMinus = document.querySelectorAll(`.temp-step-minus[data-id="${dev.id}"]`);
+    btnMinus.forEach(btn => {
+      btn.onclick = () => stepDeviceTemperature(dev.id, -0.5);
+    });
+
+    const btnPlus = document.querySelectorAll(`.temp-step-plus[data-id="${dev.id}"]`);
+    btnPlus.forEach(btn => {
+      btn.onclick = () => stepDeviceTemperature(dev.id, +0.5);
+    });
+
+    // Pet Feeder Feed Button
+    const btnFeed = document.querySelectorAll(`.btn-feed-pet[data-id="${dev.id}"]`);
+    btnFeed.forEach(btn => {
+      btn.onclick = () => triggerPetFeed(dev.id);
     });
   });
 }
 
 function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
-  const icon = isLight ? "💡" : (dev.type === "socket" ? "🔌" : (dev.type === "climate" ? "🌡️" : "⚡"));
+  const isClimate = dev.type === "climate" || dev.category === "wk" || dev.name.toLowerCase().includes("heat") || dev.name.toLowerCase().includes("thermostat");
+  const isPetFeeder = dev.type === "pet_feeder" || dev.type === "pet" || ["cwf", "cwyq", "cwwsq"].includes(dev.category) || dev.name.toLowerCase().includes("feeder") || dev.name.toLowerCase().includes("pet");
+
+  let icon = "⚡";
+  if (isPetFeeder) icon = "🐾";
+  else if (isClimate) icon = "🌡️";
+  else if (isLight) icon = "💡";
+  else if (dev.type === "socket") icon = "🔌";
   
   let statusBadge = `<span style="color: var(--accent-green); font-size: 12px;">● Online</span>`;
   if (!dev.online) {
@@ -252,6 +288,92 @@ function createDeviceCardHtml(dev) {
     }
   }
 
+  // --- 1. CLIMATE / HEATING THERMOSTAT CARD ---
+  if (isClimate) {
+    const currentTemp = dev.current_temperature !== undefined ? parseFloat(dev.current_temperature).toFixed(1) : "21.5";
+    const targetTemp = dev.target_temperature !== undefined ? parseFloat(dev.target_temperature).toFixed(1) : "22.0";
+
+    return `
+      <div class="card" id="card-${dev.id}" style="border-color: rgba(251, 146, 60, 0.3);">
+        <div>
+          <div class="card-header">
+            <div>
+              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-subtitle">${escapeHtml(dev.room || 'Default')} &bull; ${statusBadge}</div>
+            </div>
+            <div class="card-icon" style="background: rgba(251, 146, 60, 0.15);">🔥</div>
+          </div>
+
+          <!-- Current Room Temperature Display -->
+          <div class="climate-current-temp">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Current Temp</div>
+              <div class="climate-temp-big">${currentTemp}°C</div>
+            </div>
+            <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}" style="width: auto; padding: 10px 18px; font-size: 14px;">
+              ${dev.is_on ? '🔥 Heating' : '❄️ Off'}
+            </button>
+          </div>
+
+          <!-- Target Desired Temperature Stepper -->
+          <div style="margin-top: 14px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Desired Setpoint:</div>
+            
+            <div class="temp-stepper">
+              <button class="temp-btn temp-step-minus" data-id="${dev.id}">−</button>
+              
+              <div class="temp-target-display">
+                <div class="temp-target-val" data-id="${dev.id}">${targetTemp}°C</div>
+              </div>
+
+              <button class="temp-btn temp-step-plus" data-id="${dev.id}">+</button>
+            </div>
+
+            <!-- Touch Range Slider -->
+            <div class="slider-container" style="margin-top: 10px;">
+              <input type="range" min="15.0" max="32.0" step="0.5" value="${targetTemp}" class="touch-slider device-temp-slider" data-id="${dev.id}" style="accent-color: #fb923c;">
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- 2. PET FEEDER / PET WATERER CARD ---
+  if (isPetFeeder) {
+    const lastFed = dev.last_fed || "Today";
+    return `
+      <div class="card" id="card-${dev.id}" style="border-color: rgba(168, 85, 247, 0.35);">
+        <div>
+          <div class="card-header">
+            <div>
+              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-subtitle">${escapeHtml(dev.room || 'Pet Zone')} &bull; ${statusBadge}</div>
+            </div>
+            <div class="card-icon" style="background: rgba(168, 85, 247, 0.15);">🐾</div>
+          </div>
+
+          <div style="background: rgba(255, 255, 255, 0.04); padding: 12px 16px; border-radius: 12px; margin: 12px 0; border: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 11px; color: var(--text-muted); text-transform: uppercase;">Status</div>
+              <div style="font-size: 16px; font-weight: 700; color: #c084fc;">Ready to Dispense</div>
+            </div>
+            <div style="font-size: 12px; color: var(--text-muted);">
+              Last fed: <strong style="color: #fff;">${lastFed}</strong>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 10px; margin-top: 14px;">
+            <button class="action-btn btn-feed-pet" data-id="${dev.id}" style="flex: 1; justify-content: center; background: linear-gradient(135deg, #a855f7, #7e22ce); font-size: 15px;">
+              🍖 Dispense 1 Portion
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  // --- 3. LIGHT / SWITCH / SOCKET CARD ---
   return `
     <div class="card" id="card-${dev.id}">
       <div>
@@ -307,6 +429,70 @@ async function setDeviceBrightness(deviceId, brightness) {
     });
   } catch (e) {
     console.error("Brightness error:", e);
+  }
+}
+
+async function setDeviceTemperature(deviceId, targetTemp) {
+  const rounded = parseFloat(targetTemp).toFixed(1);
+  const targetValEl = document.querySelectorAll(`.temp-target-val[data-id="${deviceId}"]`);
+  targetValEl.forEach(el => el.textContent = `${rounded}°C`);
+
+  const slider = document.querySelectorAll(`.device-temp-slider[data-id="${deviceId}"]`);
+  slider.forEach(s => s.value = rounded);
+
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/temperature`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ temperature: parseFloat(rounded) })
+    });
+    if (res.ok) {
+      showToast(`Target set to ${rounded}°C`);
+      const dev = state.devices.find(d => d.id === deviceId);
+      if (dev) dev.target_temperature = parseFloat(rounded);
+    }
+  } catch (e) {
+    showToast("Failed to set temperature");
+  }
+}
+
+function stepDeviceTemperature(deviceId, stepDelta) {
+  const dev = state.devices.find(d => d.id === deviceId);
+  const currentTarget = (dev && dev.target_temperature !== undefined) ? dev.target_temperature : 22.0;
+  const newTarget = Math.max(15.0, Math.min(32.0, currentTarget + stepDelta));
+  setDeviceTemperature(deviceId, newTarget);
+}
+
+async function triggerPetFeed(deviceId) {
+  const btn = document.querySelector(`.btn-feed-pet[data-id="${deviceId}"]`);
+  if (btn) {
+    btn.textContent = "⏳ Dispensing...";
+    btn.disabled = true;
+  }
+
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/feed`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ portions: 1 })
+    });
+    if (res.ok) {
+      showToast("🍖 Food dispensed successfully for your pet!");
+      const dev = state.devices.find(d => d.id === deviceId);
+      if (dev) {
+        dev.last_fed = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        renderTuyaDevices(state.devices);
+      }
+    } else {
+      showToast("Failed to dispense food");
+    }
+  } catch (err) {
+    showToast("Error communicating with Pet Feeder");
+  } finally {
+    if (btn) {
+      btn.textContent = "🍖 Dispense 1 Portion";
+      btn.disabled = false;
+    }
   }
 }
 
