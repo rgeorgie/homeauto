@@ -277,27 +277,37 @@ class BluetoothAudioManager:
         return await loop.run_in_executor(None, _switch)
 
     def _generate_chime_wav(self, filepath: str = "/tmp/chime.wav") -> bool:
-        """Generates a high quality 2-tone melodic chime WAV file with zero external dependencies."""
+        """Generates a high quality 3.0s 4-note melodic chime WAV (C5-E5-G5-C6) to wake up soundbars."""
         try:
             import wave
             import struct
             import math
             sample_rate = 44100
-            duration = 1.0
-            freq1 = 587.33  # D5
-            freq2 = 880.00  # A5
-            n_samples = int(sample_rate * duration)
+            notes = [
+                (0.0, 0.7, 523.25),  # C5
+                (0.7, 1.4, 659.25),  # E5
+                (1.4, 2.1, 783.99),  # G5
+                (2.1, 3.0, 1046.50), # C6
+            ]
+            total_duration = 3.0
+            n_samples = int(sample_rate * total_duration)
             with wave.open(filepath, "w") as wav_file:
                 wav_file.setnchannels(2)
                 wav_file.setsampwidth(2)
                 wav_file.setframerate(sample_rate)
                 for i in range(n_samples):
                     t = float(i) / sample_rate
-                    freq = freq1 if t < 0.45 else freq2
-                    envelope = math.sin(math.pi * i / n_samples)
-                    value = int(18000.0 * envelope * math.sin(2.0 * math.pi * freq * t))
-                    packed_sample = struct.pack("<hh", value, value)
-                    wav_file.writeframesraw(packed_sample)
+                    freq = 523.25
+                    env = 0.5
+                    for start, end, f in notes:
+                        if start <= t < end:
+                            freq = f
+                            note_t = (t - start) / (end - start)
+                            env = math.sin(math.pi * note_t)
+                            break
+                    val = int(28000.0 * env * math.sin(2.0 * math.pi * freq * t))
+                    packed = struct.pack("<hh", val, val)
+                    wav_file.writeframesraw(packed)
             return True
         except Exception as e:
             logger.error(f"Error generating chime wave: {e}")
@@ -321,13 +331,14 @@ class BluetoothAudioManager:
             except Exception:
                 pass
 
-            # Unmute sink and set volume on both target sink and default sink
+            # Unmute and ensure volume is loud enough for speaker amplifier (at least 75%)
+            test_vol = max(75, self.volume)
             try:
                 subprocess.run(["pactl", "set-sink-mute", target_sink, "0"], capture_output=True, env=env)
-                subprocess.run(["pactl", "set-sink-volume", target_sink, f"{self.volume}%"], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-sink-volume", target_sink, f"{test_vol}%"], capture_output=True, env=env)
                 subprocess.run(["pactl", "set-default-sink", target_sink], capture_output=True, env=env)
                 subprocess.run(["pactl", "set-sink-mute", "@DEFAULT_SINK@", "0"], capture_output=True, env=env)
-                subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{self.volume}%"], capture_output=True, env=env)
+                subprocess.run(["pactl", "set-sink-volume", "@DEFAULT_SINK@", f"{test_vol}%"], capture_output=True, env=env)
             except Exception:
                 pass
 
@@ -335,11 +346,11 @@ class BluetoothAudioManager:
             self._generate_chime_wav(chime_path)
             errors = []
 
-            logger.info(f"Playing test chime on soundbar (sink: {target_sink}, volume: {self.volume}%)")
+            logger.info(f"Playing test chime on soundbar (sink: {target_sink}, volume: {test_vol}%)")
 
-            # 1. Try paplay
+            # 1. Try paplay with direct device targeting
             if shutil.which("paplay"):
-                res = subprocess.run(["paplay", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                res = subprocess.run(["paplay", f"--device={target_sink}", chime_path], capture_output=True, text=True, timeout=6, env=env)
                 if res.returncode == 0:
                     logger.info("Test chime succeeded via paplay")
                     return {"success": True, "method": "paplay", "sink": target_sink}
@@ -348,7 +359,7 @@ class BluetoothAudioManager:
 
             # 2. Try pw-play
             if shutil.which("pw-play"):
-                res = subprocess.run(["pw-play", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                res = subprocess.run(["pw-play", chime_path], capture_output=True, text=True, timeout=6, env=env)
                 if res.returncode == 0:
                     logger.info("Test chime succeeded via pw-play")
                     return {"success": True, "method": "pw-play", "sink": target_sink}
@@ -357,7 +368,7 @@ class BluetoothAudioManager:
 
             # 3. Try mpv
             if shutil.which("mpv"):
-                res = subprocess.run(["mpv", "--no-video", "--ao=pulse,pipewire,alsa", f"--volume={self.volume}", chime_path], capture_output=True, text=True, timeout=4, env=env)
+                res = subprocess.run(["mpv", "--no-video", "--ao=pulse,pipewire,alsa", f"--volume={test_vol}", chime_path], capture_output=True, text=True, timeout=6, env=env)
                 if res.returncode == 0:
                     logger.info("Test chime succeeded via mpv")
                     return {"success": True, "method": "mpv", "sink": target_sink}
