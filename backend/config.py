@@ -84,19 +84,27 @@ class AppConfig(BaseModel):
     screensaver: ScreensaverConfig = Field(default_factory=ScreensaverConfig)
     weather: WeatherConfig = Field(default_factory=WeatherConfig)
 
-def load_config(config_path: str = "config.yaml") -> AppConfig:
-    if not os.path.exists(config_path):
-        if os.path.exists("config.example.yaml"):
-            config_path = "config.example.yaml"
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEFAULT_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
+EXAMPLE_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.example.yaml")
+
+def load_config(config_path: Optional[str] = None) -> AppConfig:
+    target_path = config_path or DEFAULT_CONFIG_PATH
+    if not os.path.exists(target_path):
+        if os.path.exists(EXAMPLE_CONFIG_PATH):
+            target_path = EXAMPLE_CONFIG_PATH
         else:
             return AppConfig()
     
-    with open(config_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    
-    return AppConfig(**data)
+    try:
+        with open(target_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+        return AppConfig(**data)
+    except Exception:
+        return AppConfig()
 
-def save_config(config: AppConfig, config_path: str = "config.yaml"):
+def save_config(config: AppConfig, config_path: Optional[str] = None):
+    target_path = config_path or DEFAULT_CONFIG_PATH
     data = config.model_dump()
-    with open(config_path, "w", encoding="utf-8") as f:
+    with open(target_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)

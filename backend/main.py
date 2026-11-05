@@ -74,22 +74,34 @@ async def background_telemetry_and_sync():
                 }
             }
             await ws_manager.broadcast(payload)
+        except asyncio.CancelledError:
+            break
         except Exception as e:
             logger.debug(f"Telemetry sync loop error: {e}")
-        await asyncio.sleep(3.0)
+
+        try:
+            await asyncio.sleep(3.0)
+        except asyncio.CancelledError:
+            break
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     logger.info("Initializing HomeAuto platform services...")
+    tuya_mgr.start_background_service()
     bt_mgr.start_background_service()
     sync_task = asyncio.create_task(background_telemetry_and_sync())
     yield
     # Shutdown
     logger.info("Shutting down HomeAuto platform services...")
     sync_task.cancel()
+    tuya_mgr.stop_background_service()
     bt_mgr.stop_background_service()
     media_player.stop()
+    try:
+        await asyncio.wait_for(asyncio.shield(sync_task), timeout=0.5)
+    except Exception:
+        pass
 
 app = FastAPI(title="HomeAuto Platform", lifespan=lifespan)
 
@@ -299,21 +311,43 @@ async def scan_bluetooth_devices():
 
 @app.post("/api/bluetooth/connect")
 async def connect_bluetooth(payload: Dict[str, str] = Body(...)):
+    global config
     mac = payload.get("mac")
     if not mac:
         raise HTTPException(status_code=400, detail="MAC address required")
     success = await bt_mgr.connect_device(mac)
-    return {"status": "ok" if success else "failed", "connected": success}
+    if success:
+        config.bluetooth_audio.target_mac = mac
+        config.bluetooth_audio.device_name = bt_mgr.current_device_name
+        config.bluetooth_audio.enabled = True
+        save_config(config)
+        await ws_manager.broadcast({
+            "type": "state_update",
+            "data": {
+                "bluetooth": await bt_mgr.check_connection_status()
+            }
+        })
+    return {"status": "ok" if success else "failed", "connected": success, "name": bt_mgr.current_device_name}
 
 @app.post("/api/bluetooth/disconnect")
 async def disconnect_bluetooth():
     success = await bt_mgr.disconnect_device()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": {
+            "bluetooth": await bt_mgr.check_connection_status()
+        }
+    })
     return {"status": "ok" if success else "failed"}
 
 @app.post("/api/bluetooth/volume")
 async def set_bluetooth_volume(payload: Dict[str, int] = Body(...)):
+    global config
     vol = payload.get("volume", 70)
     new_vol = await bt_mgr.set_volume(vol)
+    config.bluetooth_audio.default_volume = new_vol
+    save_config(config)
+    media_player.set_volume(new_vol)
     return {"volume": new_vol}
 
 @app.post("/api/bluetooth/test-sound")

@@ -56,9 +56,15 @@ class BluetoothAudioManager:
                     # If connected but sink is not yet Bluetooth, ensure default sink is routed
                     if not self.active_sink_name or ("bluez" not in self.active_sink_name.lower()):
                         await self.switch_to_bluetooth_sink(self.config.target_mac)
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 logger.debug(f"Error in BT auto-reconnect loop: {e}")
-            await asyncio.sleep(self.config.reconnect_interval_seconds)
+
+            try:
+                await asyncio.sleep(self.config.reconnect_interval_seconds)
+            except asyncio.CancelledError:
+                break
 
     async def check_connection_status(self) -> Dict[str, Any]:
         """Checks if the configured BT device or any BT audio sink is currently connected."""
@@ -72,14 +78,14 @@ class BluetoothAudioManager:
             env = self._get_audio_env()
             try:
                 if mac:
-                    res = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=5)
+                    res = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=1.5)
                     if "Connected: yes" in res.stdout:
                         connected = True
                         for line in res.stdout.splitlines():
                             if "Name:" in line:
                                 device_name = line.split("Name:", 1)[1].strip()
                 else:
-                    res = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True, timeout=5)
+                    res = subprocess.run(["bluetoothctl", "devices", "Connected"], capture_output=True, text=True, timeout=1.5)
                     lines = [l for l in res.stdout.splitlines() if l.strip()]
                     if lines:
                         connected = True
@@ -89,7 +95,7 @@ class BluetoothAudioManager:
 
                 # Check default sink in pactl / PipeWire
                 if shutil.which("pactl"):
-                    info_res = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=3, env=env)
+                    info_res = subprocess.run(["pactl", "info"], capture_output=True, text=True, timeout=1.5, env=env)
                     for line in info_res.stdout.splitlines():
                         if "Default Sink:" in line:
                             active_sink = line.split("Default Sink:", 1)[1].strip()
@@ -149,16 +155,26 @@ class BluetoothAudioManager:
     async def scan_devices(self) -> List[Dict[str, str]]:
         """Scans for nearby and paired Bluetooth devices."""
         def _scan():
-            devices = []
+            devices_map: Dict[str, str] = {}
             try:
-                res = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=5)
+                # 1. Trigger quick discovery scan (3s) to find pairing speakers
+                subprocess.run(["bluetoothctl", "--timeout", "3", "scan", "on"], capture_output=True, text=True, timeout=5)
+            except Exception:
+                pass
+
+            try:
+                # 2. Get all discovered and paired devices
+                res = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=3)
                 for line in res.stdout.splitlines():
                     parts = line.strip().split(" ", 2)
                     if len(parts) >= 3 and parts[0] == "Device":
-                        devices.append({"mac": parts[1], "name": parts[2]})
+                        mac = parts[1].strip()
+                        name = parts[2].strip()
+                        if name and name != mac.replace(":", "-"):
+                            devices_map[mac] = name
             except Exception as e:
                 logger.error(f"Error scanning BT devices: {e}")
-            return devices
+            return [{"mac": mac, "name": name} for mac, name in devices_map.items()]
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _scan)
@@ -167,9 +183,17 @@ class BluetoothAudioManager:
         """Connects to a specific Bluetooth MAC and routes audio."""
         def _connect():
             try:
-                subprocess.run(["bluetoothctl", "trust", mac], capture_output=True, timeout=5)
+                # 1. Pair if required
+                subprocess.run(["bluetoothctl", "pair", mac], capture_output=True, text=True, timeout=8)
+                # 2. Trust device
+                subprocess.run(["bluetoothctl", "trust", mac], capture_output=True, text=True, timeout=4)
+                # 3. Connect A2DP profile
                 res = subprocess.run(["bluetoothctl", "connect", mac], capture_output=True, text=True, timeout=12)
-                return "Connection successful" in res.stdout or "Connected: yes" in res.stdout
+                connected = "Connection successful" in res.stdout or "Connected: yes" in res.stdout
+                if not connected:
+                    info_res = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=3)
+                    connected = "Connected: yes" in info_res.stdout
+                return connected
             except Exception as e:
                 logger.error(f"Error connecting to BT device {mac}: {e}")
                 return False
@@ -179,9 +203,18 @@ class BluetoothAudioManager:
         if success:
             self.config.target_mac = mac
             self.is_connected = True
-            logger.info(f"Successfully connected to Bluetooth device: {mac}")
-            # Allow BlueZ -> PipeWire/PulseAudio sink registration (1-2s)
-            await asyncio.sleep(1.5)
+            # Read real device name
+            try:
+                info = subprocess.run(["bluetoothctl", "info", mac], capture_output=True, text=True, timeout=3)
+                for line in info.stdout.splitlines():
+                    if "Name:" in line:
+                        self.current_device_name = line.split("Name:", 1)[1].strip()
+                        self.config.device_name = self.current_device_name
+            except Exception:
+                pass
+
+            logger.info(f"Successfully connected to Bluetooth device: {self.current_device_name} ({mac})")
+            await asyncio.sleep(1.2)
             await self.switch_to_bluetooth_sink(mac)
         return success
 

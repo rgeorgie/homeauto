@@ -8,6 +8,9 @@ export DISPLAY="${DISPLAY:-:0}"
 if [ -z "$XDG_RUNTIME_DIR" ]; then
   export XDG_RUNTIME_DIR="/run/user/$(id -u)"
 fi
+if [ -z "$WAYLAND_DISPLAY" ] && [ -e "$XDG_RUNTIME_DIR/wayland-0" ]; then
+  export WAYLAND_DISPLAY="wayland-0"
+fi
 
 # Detect Chromium binary on Raspberry Pi OS
 if command -v chromium-browser >/dev/null 2>&1; then
@@ -19,14 +22,24 @@ else
   exit 1
 fi
 
-# Wait for HomeAuto backend to be ready
-echo "Waiting for HomeAuto server at http://localhost:8080..."
-for i in {1..30}; do
-  if curl -s http://localhost:8080/api/status >/dev/null 2>&1; then
+# Clean up background helpers on exit
+trap 'kill $(jobs -p) 2>/dev/null || true; exit 0' SIGTERM SIGINT EXIT
+
+# Prevent Chromium session restore prompt hanging on unclean shutdown
+PREFS_FILE="$HOME/.config/chromium/Default/Preferences"
+if [ -f "$PREFS_FILE" ]; then
+  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PREFS_FILE" 2>/dev/null || true
+  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS_FILE" 2>/dev/null || true
+fi
+
+# Wait for HomeAuto backend to be ready (up to 10s, fast poll)
+echo "Waiting for HomeAuto server at http://127.0.0.1:8080..."
+for i in {1..20}; do
+  if curl -s --max-time 1 http://127.0.0.1:8080/api/status >/dev/null 2>&1; then
     echo "HomeAuto server is online!"
     break
   fi
-  sleep 1
+  sleep 0.5
 done
 
 # Disable X11 screen sleep and screen savers (if on X11)
@@ -38,6 +51,7 @@ fi
 
 # Hide mouse cursor on touchscreen
 if command -v unclutter >/dev/null 2>&1; then
+  pkill unclutter 2>/dev/null || true
   unclutter -idle 0.5 -root &
 fi
 
@@ -48,10 +62,11 @@ exec $CHROMIUM_BIN \
   --noerrdialogs \
   --disable-infobars \
   --disable-session-crashed-bubble \
+  --disable-features=Translate,OptimizationHints,MediaRouter \
   --check-for-update-interval=31536000 \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --touch-events=enabled \
   --enable-features=OverlayScrollbar \
   --ozone-platform-hint=auto \
-  --app=http://localhost:8080
+  --app=http://127.0.0.1:8080

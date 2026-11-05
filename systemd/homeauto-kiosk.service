@@ -12,7 +12,12 @@ Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=XAUTHORITY=/home/pi/.Xauthority
 ExecStart=/home/pi/homeauto/kiosk.sh
 Restart=always
-RestartSec=5
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+FinalKillSignal=SIGKILL
 
 [Install]
 WantedBy=graphical.target

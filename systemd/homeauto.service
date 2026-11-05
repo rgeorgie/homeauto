@@ -8,7 +8,12 @@ User=pi
 WorkingDirectory=/home/pi/homeauto
 ExecStart=/home/pi/homeauto/venv/bin/python -m backend.main
 Restart=always
-RestartSec=5
+RestartSec=3
+TimeoutStopSec=5
+KillMode=control-group
+KillSignal=SIGTERM
+SendSIGKILL=yes
+FinalKillSignal=SIGKILL
 Environment=PYTHONUNBUFFERED=1
 Environment=XDG_RUNTIME_DIR=/run/user/1000
 Environment=PULSE_SERVER=unix:/run/user/1000/pulse/native

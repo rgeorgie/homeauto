@@ -57,8 +57,21 @@ class TuyaManager:
         self.local_devices: Dict[str, tinytuya.OutletDevice] = {}
         self.device_states: Dict[str, Dict[str, Any]] = {}
         self.cloud_api: Optional[Any] = None
+        self._running: bool = False
+        self._poll_task: Optional[asyncio.Task] = None
         self._init_cloud()
         self._init_local_devices()
+
+    def start_background_service(self):
+        self._running = True
+        if not self._poll_task or self._poll_task.done():
+            self._poll_task = asyncio.create_task(self._background_poll_loop())
+            logger.info("Started Tuya background device polling worker.")
+
+    def stop_background_service(self):
+        self._running = False
+        if self._poll_task:
+            self._poll_task.cancel()
 
     def reload_config(self, config: TuyaConfig):
         self.config = config
@@ -67,6 +80,33 @@ class TuyaManager:
         self._init_cloud()
         self._init_local_devices()
         logger.info("TuyaManager configuration reloaded.")
+
+    async def _background_poll_loop(self):
+        sem = asyncio.Semaphore(4)
+        loop = asyncio.get_event_loop()
+
+        async def _poll_one(dev_id):
+            async with sem:
+                try:
+                    await loop.run_in_executor(None, self._sync_poll_device, dev_id)
+                except Exception as e:
+                    logger.debug(f"Poll error for {dev_id}: {e}")
+
+        while self._running:
+            try:
+                dev_ids = list(self.local_devices.keys())
+                if dev_ids:
+                    tasks = [_poll_one(did) for did in dev_ids]
+                    await asyncio.gather(*tasks, return_exceptions=True)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.debug(f"Tuya poll loop exception: {e}")
+
+            try:
+                await asyncio.sleep(8.0)
+            except asyncio.CancelledError:
+                break
 
     def _init_cloud(self):
         if self.config.cloud.access_id and self.config.cloud.access_secret and TUYA_CONNECTOR_AVAILABLE:
@@ -119,6 +159,8 @@ class TuyaManager:
                         version=dev_conf.version
                     )
                 device.set_socketPersistent(False)
+                device.set_socketTimeout(1.0)
+                device.set_socketRetryLimit(1)
                 self.local_devices[dev_conf.id] = device
                 logger.info(f"Registered local Tuya device: {dev_conf.name} ({dev_conf.id})")
             else:
@@ -326,15 +368,18 @@ class TuyaManager:
         
         return self.device_states.get(dev_id, {})
 
-    async def get_all_states(self) -> List[Dict[str, Any]]:
-        """Polls all registered devices and returns current states."""
-        loop = asyncio.get_event_loop()
-        tasks = [
-            loop.run_in_executor(None, self._sync_poll_device, dev_id)
-            for dev_id in self.local_devices.keys()
-        ]
-        if tasks:
-            await asyncio.gather(*tasks)
+    async def get_all_states(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
+        """Returns current device states (cached in-memory for instant response, or forced refresh)."""
+        if force_refresh and self.local_devices:
+            loop = asyncio.get_event_loop()
+            tasks = [
+                loop.run_in_executor(None, self._sync_poll_device, dev_id)
+                for dev_id in self.local_devices.keys()
+            ]
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=2.5)
+            except Exception:
+                pass
         return list(self.device_states.values())
 
     async def set_device_power(self, dev_id: str, is_on: bool) -> bool:
@@ -374,6 +419,8 @@ class TuyaManager:
                     version=version
                 )
                 device.set_socketPersistent(False)
+                device.set_socketTimeout(1.5)
+                device.set_socketRetryLimit(1)
                 res = device.status()
                 if res and "dps" in res:
                     return {"success": True, "dps": res["dps"]}

@@ -41,7 +41,7 @@ class MediaPlayer:
             return False
         try:
             client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-            client.settimeout(1.0)
+            client.settimeout(0.3)
             client.connect(MPV_IPC_SOCK)
             msg = json.dumps({"command": command}) + "\n"
             client.sendall(msg.encode("utf-8"))
@@ -137,7 +137,7 @@ class MediaPlayer:
         if self._mpv_process:
             try:
                 self._mpv_process.terminate()
-                self._mpv_process.wait(timeout=1.5)
+                self._mpv_process.wait(timeout=0.3)
             except Exception:
                 try:
                     self._mpv_process.kill()
