@@ -23,10 +23,15 @@ class BluetoothAudioManager:
     def _get_audio_env(self) -> Dict[str, str]:
         env = os.environ.copy()
         uid = os.getuid()
+        home = os.path.expanduser("~")
         env["XDG_RUNTIME_DIR"] = f"/run/user/{uid}"
         env["PULSE_SERVER"] = f"unix:/run/user/{uid}/pulse/native"
+        env["PIPEWIRE_RUNTIME_DIR"] = f"/run/user/{uid}"
         if "DBUS_SESSION_BUS_ADDRESS" not in env:
             env["DBUS_SESSION_BUS_ADDRESS"] = f"unix:path=/run/user/{uid}/bus"
+        cookie = os.path.join(home, ".config", "pulse", "cookie")
+        if os.path.exists(cookie):
+            env["PULSE_COOKIE"] = cookie
         return env
 
     def start_background_service(self):

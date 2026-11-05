@@ -3,18 +3,33 @@ set -e
 
 CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 USER_NAME="$(whoami)"
-USER_UID="$(id -u)"
 
-echo "==> Configuring HomeAuto systemd services for user '$USER_NAME' in '$CURRENT_DIR'..."
+echo "==> Configuring HomeAuto as user session service for '$USER_NAME'..."
 
-sudo tee /etc/systemd/system/homeauto.service > /dev/null <<EOF
+# 1. Stop and clean up old system-level services
+echo "==> Cleaning up system-level services..."
+sudo systemctl stop homeauto.service homeauto-kiosk.service 2>/dev/null || true
+sudo systemctl disable homeauto.service homeauto-kiosk.service 2>/dev/null || true
+sudo rm -f /etc/systemd/system/homeauto.service /etc/systemd/system/homeauto-kiosk.service
+sudo systemctl daemon-reload
+
+# 2. Enable lingering so user services start at boot without manual login
+echo "==> Enabling user lingering for $USER_NAME..."
+loginctl enable-linger "$USER_NAME"
+
+# 3. Create user systemd directory
+USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+mkdir -p "$USER_SYSTEMD_DIR"
+
+# 4. Generate user service for Backend Hub
+cat > "$USER_SYSTEMD_DIR/homeauto.service" <<EOF
 [Unit]
 Description=HomeAuto Platform Backend Hub
-After=network.target sound.target bluetooth.target
+After=network.target sound.target pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
 
 [Service]
 Type=simple
-User=${USER_NAME}
 WorkingDirectory=${CURRENT_DIR}
 ExecStart=${CURRENT_DIR}/venv/bin/python -m backend.main
 Restart=always
@@ -25,27 +40,23 @@ KillSignal=SIGTERM
 SendSIGKILL=yes
 FinalKillSignal=SIGKILL
 Environment=PYTHONUNBUFFERED=1
-Environment=XDG_RUNTIME_DIR=/run/user/${USER_UID}
-Environment=PULSE_SERVER=unix:/run/user/${USER_UID}/pulse/native
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=default.target
 EOF
 
-sudo tee /etc/systemd/system/homeauto-kiosk.service > /dev/null <<EOF
+# 5. Generate user service for Chromium Touch Kiosk
+cat > "$USER_SYSTEMD_DIR/homeauto-kiosk.service" <<EOF
 [Unit]
 Description=HomeAuto 15" Touchscreen Chromium Kiosk Display
-After=homeauto.service graphical.target
-Wants=graphical.target
+After=homeauto.service graphical-session.target
+Wants=homeauto.service
 
 [Service]
 Type=simple
-User=${USER_NAME}
 WorkingDirectory=${CURRENT_DIR}
 Environment=DISPLAY=:0
 Environment=WAYLAND_DISPLAY=wayland-0
-Environment=XDG_RUNTIME_DIR=/run/user/${USER_UID}
-Environment=XAUTHORITY=/home/${USER_NAME}/.Xauthority
 ExecStart=${CURRENT_DIR}/kiosk.sh
 Restart=always
 RestartSec=3
@@ -56,11 +67,16 @@ SendSIGKILL=yes
 FinalKillSignal=SIGKILL
 
 [Install]
-WantedBy=graphical.target
+WantedBy=default.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl restart homeauto.service
-sudo systemctl restart homeauto-kiosk.service
+# 6. Reload and start user services
+systemctl --user daemon-reload
+systemctl --user enable --now homeauto.service
+systemctl --user enable --now homeauto-kiosk.service
 
-echo "🎉 Services configured and restarted successfully!"
+echo ""
+echo "🎉 HomeAuto is now running in your native user session with full PipeWire & Bluetooth audio access!"
+echo "Check status anytime with:"
+echo "  systemctl --user status homeauto.service"
+echo "  systemctl --user status homeauto-kiosk.service"
