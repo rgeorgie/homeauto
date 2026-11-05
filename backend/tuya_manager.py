@@ -470,6 +470,13 @@ class TuyaManager:
 
             configured_ids = {d.id for d in self.config.devices}
 
+            # Home / room names from the Tuya Cloud (needs User ID); best effort
+            try:
+                loc_map = self._fetch_home_room_map(self.config.cloud.user_id.strip() if self.config.cloud.user_id else "")
+            except Exception as e:
+                logger.info(f"Home/room lookup failed: {e}")
+                loc_map = {}
+
             # Merge local devices
             if isinstance(local_raw, dict):
                 for ip, data in local_raw.items():
@@ -494,7 +501,8 @@ class TuyaManager:
                         "type": dev_type,
                         "category": category or data.get("productKey", ""),
                         "product_name": cloud_info.get("product_name", "Local Tuya Device"),
-                        "room": "Living Room",
+                        "home": loc_map.get(dev_id, {}).get("home", ""),
+                        "room": loc_map.get(dev_id, {}).get("room") or "Living Room",
                         "is_configured": dev_id in configured_ids
                     })
 
@@ -516,7 +524,8 @@ class TuyaManager:
                         "type": dev_type,
                         "category": category,
                         "product_name": cdev.get("product_name", "Cloud Tuya Device"),
-                        "room": "Default",
+                        "home": loc_map.get(dev_id, {}).get("home", ""),
+                        "room": loc_map.get(dev_id, {}).get("room") or "Default",
                         "is_configured": dev_id in configured_ids
                     })
 

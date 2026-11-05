@@ -125,6 +125,8 @@ function openAddDeviceWithPrefill(index) {
   if (verInput) verInput.value = dev.version || "3.3";
   if (typeInput) typeInput.value = dev.type || "switch";
   if (roomInput) roomInput.value = dev.room || "Living Room";
+  const homeInput = document.getElementById("device-home");
+  if (homeInput) homeInput.value = dev.home || "";
   if (resEl) resEl.textContent = "";
 
   const modalForm = document.getElementById("modal-device-form");
@@ -206,13 +208,66 @@ async function importAllDiscoveredDevices() {
   }
 }
 
-function renderTuyaDevices(devices) {
+const HOME_FILTER_KEY = "homeauto.selectedHome";
+const ALL_HOMES = "__all__";
+
+function getSelectedHome() {
+  return localStorage.getItem(HOME_FILTER_KEY) || ALL_HOMES;
+}
+
+function updateHomeFilters(devices) {
+  const homes = [...new Set(devices.map(d => d.home).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const selects = document.querySelectorAll(".home-filter");
+  // Only show the selector when there is more than one home to choose from
+  let selected = getSelectedHome();
+  if (selected !== ALL_HOMES && !homes.includes(selected)) selected = ALL_HOMES;
+
+  selects.forEach(sel => {
+    sel.style.display = homes.length > 1 ? "" : "none";
+    // Rebuilding options every state push would close an open dropdown; only rebuild when the home list changed
+    const key = homes.join("\u0001");
+    if (sel.dataset.homes === key) { sel.value = selected; return; }
+    sel.dataset.homes = key;
+    sel.innerHTML = `<option value="${ALL_HOMES}">All homes</option>` +
+      homes.map(h => `<option value="${escapeHtml(h)}">🏠 ${escapeHtml(h)}</option>`).join("");
+    sel.value = selected;
+    sel.onchange = () => {
+      localStorage.setItem(HOME_FILTER_KEY, sel.value);
+      renderTuyaDevices(state.devices);
+    };
+  });
+  return selected;
+}
+
+function groupDevicesByRoom(devices) {
+  const groups = new Map();
+  devices.forEach(d => {
+    const room = d.room || "Default";
+    if (!groups.has(room)) groups.set(room, []);
+    groups.get(room).push(d);
+  });
+  return [...groups.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function buildRoomGroupsHtml(devices) {
+  return groupDevicesByRoom(devices).map(([room, devs]) => `
+    <div class="room-group">
+      <div class="room-group-title">${escapeHtml(room)} <span style="opacity: 0.6;">(${devs.length})</span></div>
+      <div class="dashboard-grid">${devs.sort((a, b) => a.name.localeCompare(b.name)).map(d => createDeviceCardHtml(d)).join("")}</div>
+    </div>
+  `).join("");
+}
+
+function renderTuyaDevices(allDevices) {
   const grid = document.getElementById("devices-grid");
   const quickGrid = document.getElementById("quick-devices-grid");
   if (!grid) return;
 
+  const selectedHome = updateHomeFilters(allDevices || []);
+  const devices = (allDevices || []).filter(d => selectedHome === ALL_HOMES || d.home === selectedHome);
+
   if (!devices || devices.length === 0) {
-    grid.innerHTML = `<div class="card" style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 32px;">
+    grid.innerHTML = `<div class="card" style="text-align: center; color: var(--text-muted); padding: 32px;">
       <div style="font-size: 32px; margin-bottom: 8px;">📡</div>
       <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 4px;">No SmartLife / Tuya Devices Displayed Yet</div>
       <div>Click <strong>"🔍 Scan Local Devices"</strong> above to auto-discover your devices and add them to the screen!</div>
@@ -221,7 +276,7 @@ function renderTuyaDevices(devices) {
     return;
   }
 
-  const html = devices.map(dev => createDeviceCardHtml(dev)).join("");
+  const html = buildRoomGroupsHtml(devices);
   grid.innerHTML = html;
   if (quickGrid) quickGrid.innerHTML = html;
 

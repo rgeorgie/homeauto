@@ -244,6 +244,10 @@ async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
                         existing.ip = dev_raw.get("ip")
                     if dev_raw.get("local_key"):
                         existing.local_key = dev_raw.get("local_key")
+                    if dev_raw.get("home"):  # cloud-derived location; only then trust the room too
+                        existing.home = dev_raw.get("home")
+                        if dev_raw.get("room"):
+                            existing.room = dev_raw.get("room")
                     if dev_raw.get("category"):
                         existing.category = dev_raw.get("category")
                         existing.type = dev_raw.get("type") or existing.type
@@ -257,7 +261,8 @@ async def import_devices_batch(payload: Dict[str, Any] = Body(...)):
                 version=float(dev_raw.get("version") or 3.3),
                 type=dev_raw.get("type") or "switch",
                 category=dev_raw.get("category") or "cz",
-                room=dev_raw.get("room") or "Living Room"
+                room=dev_raw.get("room") or "Living Room",
+                home=dev_raw.get("home") or ""
             )
             config.tuya.devices.append(new_dev)
             existing_ids.add(dev_id)

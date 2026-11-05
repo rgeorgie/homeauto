@@ -95,7 +95,8 @@ function initAdminPanel() {
         local_key: document.getElementById("device-key").value.trim(),
         version: parseFloat(document.getElementById("device-version").value || "3.3"),
         type: document.getElementById("device-type").value,
-        room: document.getElementById("device-room").value.trim() || "Default"
+        room: document.getElementById("device-room").value.trim() || "Default",
+        home: document.getElementById("device-home").value.trim()
       };
 
       try {
@@ -343,7 +344,7 @@ function renderAdminDevicesTable(devices) {
       <td><code>${escapeHtml(dev.id)}</code></td>
       <td>${escapeHtml(dev.ip || 'Auto / Cloud')}</td>
       <td><span class="badge badge-type">${escapeHtml(dev.type)}</span></td>
-      <td>${escapeHtml(dev.room || 'Default')}</td>
+      <td>${dev.home ? escapeHtml(dev.home) + ' / ' : ''}${escapeHtml(dev.room || 'Default')}</td>
       <td>v${dev.version || 3.3}</td>
       <td>
         <div style="display: flex; gap: 8px;">
@@ -417,6 +418,7 @@ function editDeviceRow(id) {
   document.getElementById("device-version").value = dev.version || "3.3";
   document.getElementById("device-type").value = dev.type || "switch";
   document.getElementById("device-room").value = dev.room || "Default";
+  document.getElementById("device-home").value = dev.home || "";
   document.getElementById("device-test-result").textContent = "";
 
   document.getElementById("modal-device-form").style.display = "flex";
