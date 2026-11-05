@@ -20,8 +20,8 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
     dname = (name or "").lower().strip()
     combined = f"{cat} {pname} {dname}"
 
-    # 1. Pet Feeder / Pet Water Fountain / Cat Care
-    if cat in ["cwf", "cwyq", "cwwsq", "cwsb", "pet"] or any(k in combined for k in ["pet", "feeder", "cat", "dog", "fountain", "kibble"]):
+    # 1. Pet Feeder / Pet Water Fountain / Cat Care / Food Dispenser
+    if cat in ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"] or any(k in combined for k in ["pet", "feeder", "cat", "dog", "fountain", "kibble", "food", "feed", "meal", "treat", "portion", "dispenser", "waterer", "bowl", "snack", "litter"]):
         return "pet_feeder"
 
     # 2. Climate / Thermostats / Heaters / Radiator TRVs
@@ -814,37 +814,69 @@ class TuyaManager:
     async def feed_pet(self, dev_id: str, portions: int = 1) -> bool:
         """Dispenses food for a smart pet feeder."""
         dev = self.local_devices.get(dev_id)
-        if not dev:
-            return False
 
         def _feed():
+            if not dev:
+                return False
             try:
                 state = self.device_states.get(dev_id, {})
                 dps = state.get("dps", {})
 
                 # Check which DPS controls manual feed
                 feed_dps = None
-                for key in ['3', '1', '101', '4', '2']:
+                for key in ['3', '101', '4', '102', '1', '2']:
                     if key in dps:
-                        feed_dps = int(key)
+                        feed_dps = int(key) if str(key).isdigit() else key
                         break
 
                 if feed_dps is None:
-                    feed_dps = 3 # standard Tuya pet feeder manual_feed DPS
+                    feed_dps = 3  # standard Tuya pet feeder manual_feed DPS
 
-                dev.set_value(feed_dps, portions)
-                logger.info(f"Dispensed {portions} portion(s) for pet feeder {dev_id} (DPS {feed_dps})")
+                res = dev.set_value(feed_dps, portions)
+                logger.info(f"Dispensed {portions} portion(s) for pet feeder {dev_id} (DPS {feed_dps}): {res}")
+                if isinstance(res, dict) and "Error" in res:
+                    res_alt = dev.set_multiple_values({str(feed_dps): portions})
+                    logger.info(f"Fallback set_multiple_values for pet feeder {dev_id}: {res_alt}")
+                    if isinstance(res_alt, dict) and "Error" in res_alt:
+                        return False
                 return True
             except Exception as e:
                 logger.error(f"Error feeding pet on {dev_id}: {e}")
                 return False
 
         loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, _feed)
+        success = False
+        if dev:
+            success = await loop.run_in_executor(None, _feed)
+
+        # Fallback to cloud if local failed
+        if not success and self.cloud_api:
+            success = await self._set_cloud_feed(dev_id, portions)
+
         if success and dev_id in self.device_states:
             import datetime
             self.device_states[dev_id]["last_fed"] = datetime.datetime.now().strftime("%H:%M")
         return success
+
+    async def _set_cloud_feed(self, dev_id: str, portions: int = 1) -> bool:
+        if not self.cloud_api:
+            return False
+
+        def _send():
+            try:
+                commands = [{"code": "manual_feed", "value": portions}]
+                res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
+                if res and res.get("success"):
+                    return True
+                commands_alt = [{"code": "feed", "value": portions}]
+                res_alt = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands_alt})
+                return bool(res_alt and res_alt.get("success"))
+            except Exception as e:
+                logger.error(f"Error sending cloud feed command to {dev_id}: {e}")
+                return False
+
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, _send)
 
     async def set_device_brightness(self, dev_id: str, brightness: int) -> bool:
         """Sets brightness (0-100 or 0-1000)."""

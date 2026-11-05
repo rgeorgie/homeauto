@@ -272,7 +272,8 @@ function createDeviceCardHtml(dev) {
   const isLight = dev.type === "light" || dev.type === "bulb";
   const isClimate = dev.type === "climate" || dev.type === "sensor" || ["wk", "wkf", "rs", "qn", "tc", "wkjsq", "wsdcg", "thp", "th01", "cg"].includes(dev.category) ||
     dev.name.toLowerCase().includes("heat") || dev.name.toLowerCase().includes("thermostat") || dev.name.toLowerCase().includes("temp") || dev.name.toLowerCase().includes("trv") || dev.name.toLowerCase().includes("climate") || dev.name.toLowerCase().includes("radiator") || dev.name.toLowerCase().includes("boiler");
-  const isPetFeeder = dev.type === "pet_feeder" || dev.type === "pet" || ["cwf", "cwyq", "cwwsq"].includes(dev.category) || dev.name.toLowerCase().includes("feeder") || dev.name.toLowerCase().includes("pet");
+  const isPetFeeder = dev.type === "pet_feeder" || dev.type === "pet" || ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(dev.category) ||
+    dev.name.toLowerCase().includes("feeder") || dev.name.toLowerCase().includes("pet") || dev.name.toLowerCase().includes("food") || dev.name.toLowerCase().includes("feed") || dev.name.toLowerCase().includes("kibble") || dev.name.toLowerCase().includes("cat") || dev.name.toLowerCase().includes("dog") || dev.name.toLowerCase().includes("meal") || dev.name.toLowerCase().includes("treat") || dev.name.toLowerCase().includes("dispenser") || dev.name.toLowerCase().includes("fountain") || dev.name.toLowerCase().includes("waterer");
 
   let icon = "⚡";
   if (isPetFeeder) icon = "🐾";
@@ -472,11 +473,11 @@ function stepDeviceTemperature(deviceId, stepDelta) {
 }
 
 async function triggerPetFeed(deviceId) {
-  const btn = document.querySelector(`.btn-feed-pet[data-id="${deviceId}"]`);
-  if (btn) {
-    btn.textContent = "⏳ Dispensing...";
-    btn.disabled = true;
-  }
+  const btns = document.querySelectorAll(`.btn-feed-pet[data-id="${deviceId}"]`);
+  btns.forEach(b => {
+    b.textContent = "⏳ Dispensing...";
+    b.disabled = true;
+  });
 
   try {
     const res = await fetch(`/api/devices/${deviceId}/feed`, {
@@ -492,15 +493,15 @@ async function triggerPetFeed(deviceId) {
         renderTuyaDevices(state.devices);
       }
     } else {
-      showToast("Failed to dispense food");
+      showToast("Failed to dispense food", 3000);
     }
   } catch (err) {
-    showToast("Error communicating with Pet Feeder");
+    showToast("Error communicating with Pet Feeder", 3000);
   } finally {
-    if (btn) {
-      btn.textContent = "🍖 Dispense 1 Portion";
-      btn.disabled = false;
-    }
+    btns.forEach(b => {
+      b.textContent = "🍖 Dispense 1 Portion";
+      b.disabled = false;
+    });
   }
 }
 
