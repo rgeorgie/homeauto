@@ -452,6 +452,24 @@ body {
   height: 100%;
 }
 
+/* A dropped-in GIF/video replaces the generated fire */
+.screensaver-fireplace video,
+.screensaver-fireplace img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: none;
+}
+
+.screensaver-fireplace.media-video video,
+.screensaver-fireplace.media-image img { display: block; }
+.screensaver-fireplace.media-video canvas,
+.screensaver-fireplace.media-image canvas,
+.screensaver-fireplace.media-video .fire-logs,
+.screensaver-fireplace.media-image .fire-logs { display: none; }
+
 .fire-logs {
   position: absolute;
   bottom: 4%;

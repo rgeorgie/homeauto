@@ -42,10 +42,22 @@ class ScreensaverManager:
 
         return photos
 
+    def get_fireplace_media(self) -> str:
+        """Returns the web URL of the first GIF/video in the fireplace folder, or ''."""
+        folder = self.config.fireplace_directory
+        if not os.path.isdir(folder):
+            return ""
+        for name in sorted(os.listdir(folder)):
+            if name.lower().endswith((".mp4", ".webm", ".gif")):
+                rel_path = os.path.relpath(os.path.join(folder, name), start="frontend")
+                return f"/{rel_path}"
+        return ""
+
     def get_settings(self) -> Dict[str, Any]:
         return {
             "enabled": self.config.enabled,
             "mode": self.config.mode,
+            "fireplace_media": self.get_fireplace_media(),
             "idle_timeout_seconds": self.config.idle_timeout_seconds,
             "photo_transition_seconds": self.config.photo_transition_seconds,
             "widgets": self.config.widgets.model_dump(),

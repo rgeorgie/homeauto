@@ -62,6 +62,7 @@ class ScreensaverWidgetsConfig(BaseModel):
 class ScreensaverConfig(BaseModel):
     enabled: bool = True
     mode: str = "photos"  # "photos" (slideshow) or "fireplace" (animated fire)
+    fireplace_directory: str = "./frontend/assets/fireplace"  # drop a .gif/.mp4/.webm here
     idle_timeout_seconds: int = 120
     photo_transition_seconds: int = 15
     photo_directory: str = "./frontend/assets/photos"

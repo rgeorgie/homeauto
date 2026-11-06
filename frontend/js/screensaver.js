@@ -59,7 +59,7 @@ function startScreensaver() {
   clearInterval(photoCarouselInterval);
   if (state.screensaver?.mode === "fireplace") {
     overlay.classList.add("fireplace");
-    startFireplace();
+    startFireplace(state.screensaver.fireplace_media);
   } else {
     overlay.classList.remove("fireplace");
     // Start photo carousel
@@ -104,7 +104,25 @@ function buildFirePalette() {
   return pal;
 }
 
-function startFireplace() {
+function startFireplace(mediaUrl) {
+  const wrap = document.getElementById("screensaver-fireplace");
+  const video = document.getElementById("screensaver-fire-video");
+  const img = document.getElementById("screensaver-fire-img");
+  wrap.classList.remove("media-video", "media-image");
+
+  // Prefer a user-supplied GIF/video; fall back to the generated fire
+  if (mediaUrl) {
+    if (/\.gif$/i.test(mediaUrl)) {
+      img.src = mediaUrl;
+      wrap.classList.add("media-image");
+    } else {
+      video.src = mediaUrl;
+      wrap.classList.add("media-video");
+      video.play().catch(() => {});
+    }
+    return;
+  }
+
   const canvas = document.getElementById("screensaver-fire-canvas");
   if (!canvas) return;
   canvas.width = FIRE_W;
@@ -124,6 +142,11 @@ function startFireplace() {
 function stopFireplace() {
   clearInterval(fireTimer);
   fireTimer = null;
+  // Release the media so a GIF/video does not keep decoding while hidden
+  const video = document.getElementById("screensaver-fire-video");
+  const img = document.getElementById("screensaver-fire-img");
+  if (video) { video.pause(); video.removeAttribute("src"); video.load(); }
+  if (img) img.removeAttribute("src");
 }
 
 function stepFire(t) {
