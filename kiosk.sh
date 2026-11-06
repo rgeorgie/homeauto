@@ -71,6 +71,9 @@ exec $CHROMIUM_BIN \
   --disable-features=Translate,OptimizationHints,MediaRouter \
   --check-for-update-interval=31536000 \
   --password-store=basic \
+  --disable-renderer-accessibility \
+  --disable-background-networking \
+  --disable-component-update \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --touch-events=enabled \

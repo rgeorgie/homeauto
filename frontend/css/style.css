@@ -452,6 +452,14 @@ body {
   height: 100%;
 }
 
+/* Blurring what is behind the cards would be redone on every animation frame: too heavy for a Pi */
+#screensaver-overlay.fireplace .screensaver-weather,
+#screensaver-overlay.fireplace .ambient-card,
+#screensaver-overlay.fireplace .wake-hint {
+  backdrop-filter: none;
+  background: rgba(0, 0, 0, 0.65);
+}
+
 /* A dropped-in GIF/video replaces the generated fire */
 .screensaver-fireplace video,
 .screensaver-fireplace img {

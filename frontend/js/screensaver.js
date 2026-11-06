@@ -86,8 +86,8 @@ function stopScreensaver() {
 
 // Live fireplace: a low-resolution heat buffer (the classic "fire" cellular effect),
 // painted to a small canvas that CSS scales up. Cheap enough for a Raspberry Pi.
-const FIRE_W = 192;
-const FIRE_H = 108;
+const FIRE_W = 128;
+const FIRE_H = 72;
 let fireTimer = null;
 let fireHeat = null;
 let fireImage = null;
@@ -136,7 +136,7 @@ function startFireplace(mediaUrl) {
   fireTimer = setInterval(() => {
     stepFire(performance.now() / 1000);
     ctx.putImageData(fireImage, 0, 0);
-  }, 40); // ~25 fps
+  }, 66); // ~15 fps
 }
 
 function stopFireplace() {

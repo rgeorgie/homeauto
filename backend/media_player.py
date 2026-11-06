@@ -5,6 +5,7 @@ import asyncio
 import subprocess
 import shutil
 import socket
+import threading
 from typing import Dict, Any, Optional, List
 import yt_dlp
 from backend.config import YouTubeAudioConfig
@@ -22,6 +23,7 @@ class MediaPlayer:
         self.is_playing: bool = False
         self.volume: int = self.config.volume
         self._mpv_process: Optional[subprocess.Popen] = None
+        self._mpv_lock = threading.Lock()  # concurrent play() calls must never leave two mpv running
         self.ydl_opts = {
             'format': 'bestaudio/best',
             'quiet': True,
@@ -104,7 +106,7 @@ class MediaPlayer:
         self.is_playing = True
 
         if shutil.which("mpv"):
-            def _start_mpv():
+            def _start_mpv_unlocked():
                 try:
                     env = self._get_audio_env()
                     if os.path.exists(MPV_IPC_SOCK):
@@ -162,6 +164,16 @@ class MediaPlayer:
                     logger.info(f"Started mpv background audio playback for: {self.current_title}")
                 except Exception as e:
                     logger.error(f"Failed to start mpv: {e}")
+
+            def _start_mpv():
+                with self._mpv_lock:
+                    # A concurrent play() may have started mpv after our stop(): replace it, never add to it
+                    old = self._mpv_process
+                    if old and old.poll() is None:
+                        old.kill()
+                        old.wait()
+                    self._mpv_process = None
+                    _start_mpv_unlocked()
 
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, _start_mpv)
