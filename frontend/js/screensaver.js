@@ -175,6 +175,10 @@ async function loadRadioFavorites() {
 }
 
 // One station row: a play button plus a star that adds/removes it from the favourites
+function radioAttr(str) {
+  return escapeHtml(str || "").replace(/"/g, "&quot;");
+}
+
 function radioRowHtml(s, playCall) {
   const isFav = radioFavorites.some(f => f.url === s.url);
   return `
@@ -183,7 +187,7 @@ function radioRowHtml(s, playCall) {
         📻 ${escapeHtml(s.name)}${s.bitrate ? ` <span style="color: var(--text-muted); font-size: 11px;">&nbsp;${s.bitrate}k</span>` : ""}
       </button>
       <button class="nav-btn" style="width: 48px; justify-content: center; font-size: 20px; ${isFav ? "color: #facc15;" : "opacity: 0.55;"}"
-        onclick="toggleRadioFavorite(this.dataset.url, this.dataset.name)" data-url="${escapeHtml(s.url)}" data-name="${escapeHtml(s.name)}">${isFav ? "★" : "☆"}</button>
+        onclick="toggleRadioFavorite(this.dataset.url, this.dataset.name)" data-url="${radioAttr(s.url)}" data-name="${radioAttr(s.name)}">${isFav ? "★" : "☆"}</button>
     </div>`;
 }
 
@@ -243,15 +247,18 @@ async function loadRadioStations(query) {
   }
 }
 
-function playRadioStation(index) {
-  const s = radioStations[index];
-  if (!s) return;
+function playRadioUrl(url, name) {
   fetch("/api/media/play", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url: s.url, title: s.name, direct: true })
+    body: JSON.stringify({ url, title: name, direct: true })
   });
-  showToast(`Playing radio: ${s.name}`);
+  showToast(`Playing radio: ${name}`);
+}
+
+function playRadioStation(index) {
+  const s = radioStations[index];
+  if (s) playRadioUrl(s.url, s.name);
 }
 
 function playPresetStream(index) {
