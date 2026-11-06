@@ -42,6 +42,7 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
     sensor_cats = ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir", "hjjcy", "zd", "sgbj", "ldcg", "wnykq", "co2bj", "pm25", "jwbj"]
     socket_cats = ["cz", "pc"]
     fan_cats = ["fs", "fsd", "jsq"]
+    camera_cats = ["sp"]
 
     # Category code from Tuya Cloud is authoritative when present
     if cat in pet_cats:
@@ -58,12 +59,16 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
         return "socket"
     if cat in fan_cats:
         return "fan"
+    if cat in camera_cats:
+        return "camera"
 
     # Fall back to names when category is unknown
     if has(["pet", "feeder", "feed", "cat", "dog", "fountain", "kibble", "meal", "treat", "portion", "dispenser", "waterer", "snack", "litter"]):
         return "pet_feeder"
     if has(["thermostat", "heat", "climate", "trv", "valve", "underfloor", "radiator", "boiler"]):
         return "climate"
+    if has(["camera", "doorbell", "cateye", "peephole"]):
+        return "camera"
     if has(["sensor", "detector", "motion", "leak", "smoke"]):
         return "sensor"
     if "strip" in words and any(w in words for w in ("power", "socket", "sockets", "outlet", "outlets", "plug", "extension", "surge")):
@@ -332,6 +337,30 @@ def extract_switch_channels(values: Dict[str, Any], cloud: bool = False) -> List
             if isinstance(val, bool):
                 channels.append({"index": 6 + j, "is_on": val, "label": f"USB {j}"})
     return channels if len(channels) >= 2 else []
+
+
+SD_STATUS_LABELS = {1: "Normal", 2: "Error", 3: "Full", 4: "Formatting", 5: "No SD card"}
+
+
+def extract_camera_data(codes: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    Reads a Tuya camera / video doorbell ('sp' category). Returns None for other devices.
+    sd_storge is "total|used|free" in KB; sd_status 1 = normal ... 5 = no card; wireless_electricity is the battery %.
+    """
+    if not any(k in codes for k in ("sd_storge", "sd_status", "wireless_electricity", "basic_flip", "doorbell_active")):
+        return None
+    storage = None
+    raw = codes.get("sd_storge")
+    if isinstance(raw, str):
+        parts = raw.split("|")
+        if len(parts) == 3 and all(p.strip().isdigit() for p in parts):
+            total, used, free = (int(p) / 1048576.0 for p in parts)  # KB -> GB
+            storage = {"total_gb": round(total, 1), "used_gb": round(used, 1), "free_gb": round(free, 1)}
+    sd_status = codes.get("sd_status")
+    return {
+        "storage": storage,
+        "sd_status": SD_STATUS_LABELS.get(sd_status) if isinstance(sd_status, int) and not isinstance(sd_status, bool) else None,
+    }
 
 
 class TuyaManager:
@@ -742,7 +771,15 @@ class TuyaManager:
         cur = temp(first("temp_current", "va_temperature", "temp_indoor"))
         tgt = temp(first("temp_set", "set_temp", "target_temp"))
         hum = first("humidity_value", "va_humidity", "humidity_current")
-        bat = first("battery_percentage", "battery")
+        bat = first("battery_percentage", "battery", "wireless_electricity")
+
+        # Camera / video doorbell: battery, SD card (no controls)
+        camera = extract_camera_data(codes)
+        if camera:
+            state["type"] = "camera"
+            state["storage"] = camera["storage"]
+            state["sd_status"] = camera["sd_status"]
+            cur = hum = None
 
         # Motion detector: pir / presence_state are "pir"|"presence" when triggered and "none" when clear
         motion_val = next((codes[n] for n in ("pir", "presence_state") if isinstance(codes.get(n), str)), None)
@@ -759,7 +796,7 @@ class TuyaManager:
             state["contact_open"] = contact
             state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
             cur = hum = None
-        if state.get("type") not in ("sensor", "climate", "pet_feeder"):
+        if state.get("type") not in ("sensor", "climate", "pet_feeder", "camera"):
             state["channels"] = extract_switch_channels(codes, cloud=True)
 
         state.update({

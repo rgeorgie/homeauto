@@ -351,13 +351,14 @@ function deviceKind(dev) {
   const t = dev.type;
   if (t === "bulb") return "light";
   if (t === "pet") return "pet_feeder";
-  if (["sensor", "climate", "pet_feeder", "light"].includes(t)) return t;
+  if (["sensor", "climate", "pet_feeder", "light", "camera"].includes(t)) return t;
   if (t && t !== "switch") return t; // socket, curtain, fan...
   if (dev.contact_open === true || dev.contact_open === false) return "sensor";
   const cat = dev.category;
   if (["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(cat)) return "pet_feeder";
   if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj"].includes(cat)) return "sensor";
   if (["wk", "wkf", "rs", "qn", "tc", "wkjsq"].includes(cat)) return "climate";
+  if (cat === "sp") return "camera";
   const words = (dev.name || "").toLowerCase().match(/[a-z0-9]+/g) || [];
   if (words.some(w => ["thermostat", "heater", "trv", "radiator", "boiler"].includes(w))) return "climate";
   if (words.some(w => ["feeder", "fountain", "waterer"].includes(w))) return "pet_feeder";
@@ -385,6 +386,35 @@ function createDeviceCardHtml(dev) {
     } else {
       statusBadge = `<span style="color: var(--text-muted); font-size: 12px;" title="${escapeHtml(dev.error || '')}">○ Offline${dev.error ? ' (' + escapeHtml(String(dev.error).slice(0, 90)) + ')' : ''}</span>`;
     }
+  }
+
+  // --- CAMERA / VIDEO DOORBELL CARD (read-only: battery and SD card; no live video) ---
+  if (kind === "camera") {
+    const has = v => v !== undefined && v !== null;
+    const readings = [];
+    if (has(dev.battery)) readings.push(`<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${dev.battery}%</div></div>`);
+    if (dev.storage) {
+      readings.push(`<div><div class="sensor-label">SD card${dev.sd_status ? " &bull; " + escapeHtml(dev.sd_status) : ""}</div><div class="sensor-value" style="font-size: 22px;">💾 ${dev.storage.free_gb} GB free</div><div class="sensor-label" style="text-transform: none;">of ${dev.storage.total_gb} GB</div></div>`);
+    } else if (dev.sd_status) {
+      readings.push(`<div><div class="sensor-label">SD card</div><div class="sensor-value" style="font-size: 22px;">💾 ${escapeHtml(dev.sd_status)}</div></div>`);
+    }
+    const body = readings.length
+      ? `<div class="sensor-readings">${readings.join("")}</div>`
+      : `<div style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">${dev.online ? "No readings reported yet" : "Waiting for the camera to report"}</div>`;
+    return `
+      <div class="card" id="card-${dev.id}">
+        <div>
+          <div class="card-header">
+            <div>
+              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
+            </div>
+            <div class="card-icon">📷</div>
+          </div>
+          ${body}
+        </div>
+      </div>
+    `;
   }
 
   // --- 0. SENSOR CARD (read-only readings, no controls) ---
@@ -672,7 +702,7 @@ async function triggerPetFeed(deviceId) {
 function updateAmbientDeviceSummary(devices) {
   const summaryEl = document.getElementById("ss-active-devices");
   if (!summaryEl) return;
-  const activeCount = devices.filter(d => d.is_on && deviceKind(d) !== "sensor").length;
+  const activeCount = devices.filter(d => d.is_on && !["sensor", "camera"].includes(deviceKind(d))).length;
   summaryEl.textContent = `${activeCount} Active Device${activeCount === 1 ? '' : 's'}`;
 }
 
