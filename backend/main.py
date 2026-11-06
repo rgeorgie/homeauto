@@ -15,6 +15,7 @@ from backend.tuya_manager import TuyaManager
 from backend.bt_audio_manager import BluetoothAudioManager
 from backend.kodi_manager import KodiManager
 from backend.media_player import MediaPlayer
+from backend import radio
 from backend.screensaver_manager import ScreensaverManager
 from backend.system_manager import SystemManager
 from backend import pi_control
@@ -452,8 +453,30 @@ async def play_media(payload: Dict[str, Any] = Body(...)):
     title = payload.get("title")
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
-    await media_player.play(url, title)
+    await media_player.play(url, title, direct=bool(payload.get("direct", False)))
     return media_player.get_status()
+
+@app.get("/api/radio/stations")
+async def radio_stations(country: str = "BG", q: str = ""):
+    try:
+        return await asyncio.to_thread(radio.search_stations, country, q)
+    except RuntimeError as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+@app.get("/api/radio/favorites")
+async def radio_favorites():
+    return radio.get_favorites()
+
+@app.post("/api/radio/favorites")
+async def radio_add_favorite(payload: Dict[str, str] = Body(...)):
+    name, url = payload.get("name", "").strip(), payload.get("url", "").strip()
+    if not name or not url:
+        raise HTTPException(status_code=400, detail="name and url are required")
+    return radio.add_favorite(name, url)
+
+@app.post("/api/radio/favorites/remove")
+async def radio_remove_favorite(payload: Dict[str, str] = Body(...)):
+    return radio.remove_favorite(payload.get("url", ""))
 
 @app.post("/api/media/pause")
 async def pause_media():

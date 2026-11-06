@@ -18,6 +18,7 @@ class MediaPlayer:
         self.config = config
         self.current_title: str = ""
         self.current_url: str = ""
+        self.current_direct: bool = False
         self.is_playing: bool = False
         self.volume: int = self.config.volume
         self._mpv_process: Optional[subprocess.Popen] = None
@@ -86,8 +87,8 @@ class MediaPlayer:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _extract)
 
-    async def play(self, url_or_preset: str, title: Optional[str] = None) -> bool:
-        """Plays YouTube stream via backend mpv player with Pulse/PipeWire audio routing."""
+    async def play(self, url_or_preset: str, title: Optional[str] = None, direct: bool = False) -> bool:
+        """Plays a YouTube stream (or, with direct=True, a plain radio stream URL) via mpv with Pulse/PipeWire audio routing."""
         self.stop()
         
         # Check matching preset title if not provided
@@ -99,6 +100,7 @@ class MediaPlayer:
                     break
         self.current_title = stream_title or "Ambient Audio Stream"
         self.current_url = url_or_preset
+        self.current_direct = direct
         self.is_playing = True
 
         if shutil.which("mpv"):
@@ -145,10 +147,10 @@ class MediaPlayer:
                         f"--input-ipc-server={MPV_IPC_SOCK}",
                         f"--volume={self.volume}",
                         "--network-timeout=15",
-                        "--ytdl=yes",
+                        "--ytdl=no" if direct else "--ytdl=yes",
                         "--ytdl-format=bestaudio/best"
                     ]
-                    if ytdl_bin:
+                    if ytdl_bin and not direct:
                         cmd.append(f"--script-opts=ytdl_hook-ytdl_path={ytdl_bin}")
                     cmd.append(play_url)
                     self._mpv_process = subprocess.Popen(
@@ -204,6 +206,7 @@ class MediaPlayer:
             "is_playing": self.is_playing,
             "title": self.current_title,
             "url": self.current_url,
+            "direct": self.current_direct,
             "volume": self.volume,
             "presets": [p.model_dump() for p in self.config.preset_streams]
         }

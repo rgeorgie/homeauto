@@ -227,6 +227,19 @@
             <!-- Rendered dynamically -->
           </div>
         </div>
+
+        <!-- Online Radio Card -->
+        <div class="card" style="grid-column: 1 / -1;">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Online Radio &bull; Bulgaria</div>
+              <div class="card-subtitle" id="radio-status">Loading stations...</div>
+            </div>
+            <div class="card-icon">📡</div>
+          </div>
+          <input type="text" id="radio-search" placeholder="Search stations (e.g. Energy, Nova, Veronika)" style="width: 100%; padding: 12px; border-radius: 10px; border: 1px solid var(--border-color); background: rgba(0,0,0,0.3); color: #fff; font-size: 14px; user-select: text; -webkit-user-select: text;">
+          <div id="radio-stations-list" style="margin-top: 12px; max-height: 340px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px;"></div>
+        </div>
       </div>
     </section>
 

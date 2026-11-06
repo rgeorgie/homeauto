@@ -110,7 +110,7 @@ function initMediaControls() {
         fetch("/api/media/play", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ url: state.media.url, title: state.media.title })
+          body: JSON.stringify({ url: state.media.url, title: state.media.title, direct: !!state.media.direct })
         });
       } else {
         playPresetStream(0);
@@ -145,6 +145,113 @@ function initMediaControls() {
       });
     });
   }
+
+  initRadio();
+}
+
+// Online radio (Bulgarian stations from the radio-browser.info directory)
+let radioStations = [];
+let radioFavorites = [];
+let radioSearchTimer = null;
+
+function initRadio() {
+  const search = document.getElementById("radio-search");
+  if (!search) return;
+  search.addEventListener("input", () => {
+    clearTimeout(radioSearchTimer);
+    radioSearchTimer = setTimeout(() => loadRadioStations(search.value.trim()), 400);
+  });
+  loadRadioFavorites().then(() => loadRadioStations(""));
+}
+
+async function loadRadioFavorites() {
+  try {
+    const res = await fetch("/api/radio/favorites");
+    if (res.ok) radioFavorites = await res.json();
+  } catch (e) {
+    console.error("Radio favourites error:", e);
+  }
+  renderRadioFavorites();
+}
+
+// One station row: a play button plus a star that adds/removes it from the favourites
+function radioRowHtml(s, playCall) {
+  const isFav = radioFavorites.some(f => f.url === s.url);
+  return `
+    <div style="display: flex; gap: 6px;">
+      <button class="nav-btn" style="flex: 1; justify-content: flex-start; text-align: left; min-width: 0;" onclick="${playCall}">
+        📻 ${escapeHtml(s.name)}${s.bitrate ? ` <span style="color: var(--text-muted); font-size: 11px;">&nbsp;${s.bitrate}k</span>` : ""}
+      </button>
+      <button class="nav-btn" style="width: 48px; justify-content: center; font-size: 20px; ${isFav ? "color: #facc15;" : "opacity: 0.55;"}"
+        onclick="toggleRadioFavorite(this.dataset.url, this.dataset.name)" data-url="${escapeHtml(s.url)}" data-name="${escapeHtml(s.name)}">${isFav ? "★" : "☆"}</button>
+    </div>`;
+}
+
+function renderRadioFavorites() {
+  const wrap = document.getElementById("radio-favorites-wrap");
+  const list = document.getElementById("radio-favorites-list");
+  if (!wrap || !list) return;
+  wrap.style.display = radioFavorites.length ? "block" : "none";
+  list.innerHTML = radioFavorites.map((s, idx) => radioRowHtml(s, `playRadioFavorite(${idx})`)).join("");
+}
+
+function renderRadioStations() {
+  const listEl = document.getElementById("radio-stations-list");
+  if (!listEl) return;
+  listEl.innerHTML = radioStations.length
+    ? radioStations.map((s, idx) => radioRowHtml(s, `playRadioStation(${idx})`)).join("")
+    : `<div style="color: var(--text-muted); padding: 10px;">No stations found.</div>`;
+}
+
+async function toggleRadioFavorite(url, name) {
+  const isFav = radioFavorites.some(f => f.url === url);
+  try {
+    const res = await fetch(isFav ? "/api/radio/favorites/remove" : "/api/radio/favorites", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, name })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    radioFavorites = await res.json();
+    showToast(isFav ? `Removed from favourites: ${name}` : `Added to favourites: ${name}`);
+    renderRadioFavorites();
+    renderRadioStations();
+  } catch (e) {
+    showToast("Could not update favourites", 2000);
+  }
+}
+
+function playRadioFavorite(index) {
+  const s = radioFavorites[index];
+  if (s) playRadioUrl(s.url, s.name);
+}
+
+async function loadRadioStations(query) {
+  const statusEl = document.getElementById("radio-status");
+  const listEl = document.getElementById("radio-stations-list");
+  if (!listEl) return;
+  if (statusEl) statusEl.textContent = "Loading stations...";
+  try {
+    const res = await fetch(`/api/radio/stations?country=BG&q=${encodeURIComponent(query)}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    radioStations = await res.json();
+    if (statusEl) statusEl.textContent = `${radioStations.length} station${radioStations.length === 1 ? "" : "s"}`;
+    renderRadioStations();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = "Radio directory unavailable (check the internet connection)";
+    listEl.innerHTML = "";
+  }
+}
+
+function playRadioStation(index) {
+  const s = radioStations[index];
+  if (!s) return;
+  fetch("/api/media/play", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url: s.url, title: s.name, direct: true })
+  });
+  showToast(`Playing radio: ${s.name}`);
 }
 
 function playPresetStream(index) {
