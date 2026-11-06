@@ -300,6 +300,16 @@ function renderMediaStatus(media) {
   if (toggleBtn) toggleBtn.textContent = media.is_playing ? "⏸ Pause" : "▶ Play";
   if (volSlider && media.volume !== undefined) volSlider.value = media.volume;
 
+  // Screensaver: show what is playing (hidden when nothing plays)
+  const nowCard = document.getElementById("ss-now-playing");
+  if (nowCard) {
+    nowCard.style.display = media.is_playing && media.title ? "flex" : "none";
+    const nowTitle = document.getElementById("ss-now-playing-title");
+    const nowIcon = document.getElementById("ss-now-playing-icon");
+    if (nowTitle) nowTitle.textContent = media.title || "";
+    if (nowIcon) nowIcon.textContent = media.direct ? "📻" : "🎵";
+  }
+
   // Render presets list
   const presetContainer = document.getElementById("media-presets-list");
   if (presetContainer && media.presets) {

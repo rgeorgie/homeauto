@@ -504,6 +504,15 @@ body {
   gap: 12px;
 }
 
+.ambient-card-title {
+  font-weight: 700;
+  font-size: 15px;
+  max-width: 320px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .wake-hint {
   font-size: 14px;
   color: rgba(255,255,255,0.6);

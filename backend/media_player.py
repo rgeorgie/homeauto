@@ -202,6 +202,10 @@ class MediaPlayer:
         self._send_ipc_command(["set_property", "volume", self.volume])
 
     def get_status(self) -> Dict[str, Any]:
+        # mpv quit on its own (stream ended or could not be opened): don't keep reporting it as playing
+        if self._mpv_process and self._mpv_process.poll() is not None:
+            self._mpv_process = None
+            self.is_playing = False
         return {
             "is_playing": self.is_playing,
             "title": self.current_title,
