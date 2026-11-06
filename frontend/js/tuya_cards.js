@@ -505,9 +505,11 @@ function createDeviceCardHtml(dev) {
               <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Current Temp</div>
               <div class="climate-temp-big">${currentTempDisplay}</div>
             </div>
-            <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}" style="width: auto; padding: 10px 18px; font-size: 14px;">
-              ${dev.is_on ? '🔥 Heating' : '❄️ Off'}
-            </button>
+            ${(() => {
+              const heating = dev.is_heating == null ? dev.is_on : dev.is_heating;
+              const label = !dev.is_on ? '❄️ Off' : heating ? '🔥 Heating' : '⏸ Idle';
+              return `<button class="device-toggle-btn ${heating ? 'is-on' : ''}" data-id="${dev.id}" style="width: auto; padding: 10px 18px; font-size: 14px;">${label}</button>`;
+            })()}
           </div>
 
           <!-- Target Desired Temperature Stepper -->

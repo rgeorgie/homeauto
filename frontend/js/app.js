@@ -11,6 +11,7 @@ const state = {
 };
 
 document.addEventListener("DOMContentLoaded", () => {
+  initDragScroll();
   initClock();
   initNavigation();
   initWebSocket();
@@ -20,6 +21,56 @@ document.addEventListener("DOMContentLoaded", () => {
   initBluetoothController();
   initTuyaCards();
 });
+
+// Drag-to-scroll fallback: some touchscreens reach the browser as a mouse, so a swipe
+// is a click-drag and never scrolls. Real touch input is left to the browser.
+function initDragScroll() {
+  const THRESHOLD = 8;
+  let drag = null;
+  let suppressClick = false;
+
+  const scrollableParent = (el) => {
+    for (; el && el !== document.body; el = el.parentElement) {
+      const oy = getComputedStyle(el).overflowY;
+      if ((oy === "auto" || oy === "scroll") && el.scrollHeight > el.clientHeight) return el;
+    }
+    return document.scrollingElement;
+  };
+
+  document.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "mouse" || e.button !== 0) return;
+    if (e.target.closest("input, select, textarea, .touch-slider")) return;
+    drag = { x: e.clientX, y: e.clientY, target: scrollableParent(e.target), moved: false,
+             left: 0, top: 0 };
+    drag.left = drag.target.scrollLeft;
+    drag.top = drag.target.scrollTop;
+  });
+
+  document.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    const dx = e.clientX - drag.x;
+    const dy = e.clientY - drag.y;
+    if (!drag.moved && Math.hypot(dx, dy) < THRESHOLD) return;
+    drag.moved = true;
+    drag.target.scrollLeft = drag.left - dx;
+    drag.target.scrollTop = drag.top - dy;
+  });
+
+  const end = () => {
+    if (drag && drag.moved) {
+      suppressClick = true;
+      setTimeout(() => { suppressClick = false; }, 0);
+    }
+    drag = null;
+  };
+  document.addEventListener("pointerup", end);
+  document.addEventListener("pointercancel", end);
+
+  // A scroll-swipe must not also press the button it ended on
+  document.addEventListener("click", (e) => {
+    if (suppressClick) { e.stopPropagation(); e.preventDefault(); }
+  }, true);
+}
 
 // Navigation Router
 function initNavigation() {

@@ -839,6 +839,10 @@ class TuyaManager:
         if (state.get("category") or "").lower() == "kt" or state.get("type") == "ac":
             fan = dps.get("5")
             state["fan_speed"] = fan if isinstance(fan, str) else state.get("fan_speed")
+        # Radiator valve (TRV): work_state is DP 19 on the "Smart WiFi TRV" models seen so far
+        ws = dps.get("19")
+        if isinstance(ws, str) and ws.lower() in ("heating", "stop"):
+            state["is_heating"] = is_on and ws.lower() == "heating"
 
         state.update({
             "online": True,
@@ -892,13 +896,18 @@ class TuyaManager:
                     state["cloud_error"] = f"Tuya Cloud: {reason}" + (f" (code {bad['code']})" if bad and bad.get("code") else "")
                     return None
                 codes = {i["code"]: i.get("value") for i in plist if isinstance(i, dict) and i.get("code") and i.get("value") is not None}
-            # Air conditioners report the fan speed (windspeed) only through the thing-model properties
-            if (state.get("category") or "").lower() == "kt" and "windspeed" not in codes:
+            # Air conditioners report the fan speed (windspeed) and radiator valves (TRV) the real heating state
+            # (work_state) only through the thing-model properties
+            extra = [c for c, wanted in (
+                ("windspeed", (state.get("category") or "").lower() == "kt"),
+                ("work_state", (state.get("category") or "").lower() == "wk" or state.get("type") == "climate"),
+            ) if wanted and c not in codes]
+            if extra:
                 props = self.cloud_api.get(f"/v2.0/cloud/thing/{dev_id}/shadow/properties")
                 plist = ((props or {}).get("result") or {}).get("properties") if props and props.get("success") else None
                 for p in plist or []:
-                    if isinstance(p, dict) and p.get("code") == "windspeed" and p.get("value") is not None:
-                        codes["windspeed"] = p["value"]
+                    if isinstance(p, dict) and p.get("code") in extra and p.get("value") is not None:
+                        codes[p["code"]] = p["value"]
         except Exception as e:
             logger.debug(f"Cloud status error for {dev_id}: {e}")
             state["cloud_error"] = f"Tuya Cloud: {e}"
@@ -963,6 +972,9 @@ class TuyaManager:
                 state["mode"] = codes["mode"]
             if isinstance(codes.get("windspeed"), str):
                 state["fan_speed"] = codes["windspeed"]
+        # Radiator valve: is it actually heating right now? (None = unknown, the UI falls back to the power switch)
+        work_state = codes.get("work_state")
+        state["is_heating"] = (is_on and str(work_state).lower() in ("heating", "heat", "opened", "open")) if isinstance(work_state, str) else None
 
         state.update({
             "online": True,
