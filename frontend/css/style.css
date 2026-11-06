@@ -265,6 +265,7 @@ body {
   outline: none;
   cursor: pointer;
   accent-color: var(--accent-blue);
+  touch-action: none; /* allow dragging the thumb instead of the browser treating it as a pan */
 }
 
 /* Climate & Heating Specific Card Styles */
