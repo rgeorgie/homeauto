@@ -353,6 +353,7 @@ function deviceKind(dev) {
   if (t === "pet") return "pet_feeder";
   if (["sensor", "climate", "pet_feeder", "light"].includes(t)) return t;
   if (t && t !== "switch") return t; // socket, curtain, fan...
+  if (dev.contact_open === true || dev.contact_open === false) return "sensor";
   const cat = dev.category;
   if (["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(cat)) return "pet_feeder";
   if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj"].includes(cat)) return "sensor";
@@ -393,7 +394,13 @@ function createDeviceCardHtml(dev) {
     const batteryReading = () => has(dev.battery)
       ? `<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${dev.battery}%</div></div>`
       : dev.battery_state ? `<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${escapeHtml(dev.battery_state)}</div></div>` : "";
-    if (dev.is_motion_sensor || dev.category === "pir") {
+    if (dev.contact_open === true || dev.contact_open === false) {
+      // Door / window contact sensor: only open/closed and the battery level
+      const open = dev.contact_open === true;
+      const color = !dev.online ? "var(--text-muted)" : open ? "var(--accent-amber)" : "var(--accent-green)";
+      readings.push(`<div><div class="sensor-label">Contact</div><div class="sensor-value" style="color: ${color}; font-size: 22px;">${open ? "🪟 Open" : "✓ Closed"}</div></div>`);
+      readings.push(batteryReading());
+    } else if (dev.is_motion_sensor || dev.category === "pir") {
       // Motion detector: only the motion state and the battery level
       const known = dev.motion === true || dev.motion === false;
       const detected = dev.motion === true;
@@ -545,7 +552,7 @@ function createDeviceCardHtml(dev) {
           <div style="display: flex; flex-direction: column; gap: 8px;">
             ${channels.map(ch => `
               <button class="device-toggle-btn ${ch.is_on ? 'is-on' : ''}" data-id="${dev.id}" data-channel="${ch.index}">
-                ${ch.is_on ? '⚡' : '○'} Line ${ch.index} &bull; ${ch.is_on ? 'ON' : 'OFF'}
+                ${ch.is_on ? '⚡' : '○'} ${escapeHtml(ch.label || 'Line ' + ch.index)} &bull; ${ch.is_on ? 'ON' : 'OFF'}
               </button>
             `).join("")}
           </div>

@@ -66,6 +66,8 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
         return "climate"
     if has(["sensor", "detector", "motion", "leak", "smoke"]):
         return "sensor"
+    if "strip" in words and any(w in words for w in ("power", "socket", "sockets", "outlet", "outlets", "plug", "extension", "surge")):
+        return "socket"
     if has(["light", "bulb", "strip", "lamp", "led", "ceiling", "spotlight"]):
         return "light"
     if has(["curtain", "blind", "shutter", "roller", "garage"]):
@@ -312,17 +314,23 @@ def extract_motion_data(dps: Dict[str, Any], category: str = "") -> Optional[Dic
     }
 
 
-def extract_switch_channels(values: Dict[str, Any], key_for) -> List[Dict[str, Any]]:
+def extract_switch_channels(values: Dict[str, Any], cloud: bool = False) -> List[Dict[str, Any]]:
     """
-    Returns [{index, is_on}] for the consecutive boolean switch lines starting at line 1,
-    or [] when the device has fewer than 2 lines. `key_for(i)` maps a line number to its key in `values`.
+    Returns [{index, is_on, label}] for every boolean on/off output of a multi-line device (power strip, 2-3 gang switch),
+    or [] when there are fewer than 2. `index` is the Tuya DP number. Local DPS use keys '1'..'8';
+    Tuya Cloud uses codes switch_1..switch_8 and switch_usb1..switch_usb4 (standard spec: USB outputs are DP 7+).
+    The lines need not be consecutive (strips often put the USB block on DP 7).
     """
     channels = []
     for i in range(1, MAX_SWITCH_CHANNELS + 1):
-        val = values.get(key_for(i))
-        if not isinstance(val, bool):
-            break
-        channels.append({"index": i, "is_on": val})
+        val = values.get(f"switch_{i}" if cloud else str(i))
+        if isinstance(val, bool):
+            channels.append({"index": i, "is_on": val, "label": f"Line {i}"})
+    if cloud:
+        for j in range(1, 5):
+            val = values.get(f"switch_usb{j}")
+            if isinstance(val, bool):
+                channels.append({"index": 6 + j, "is_on": val, "label": f"USB {j}"})
     return channels if len(channels) >= 2 else []
 
 
@@ -639,9 +647,18 @@ class TuyaManager:
         state["motion"] = motion["motion"] if motion else None
         state["battery_state"] = motion["battery_state"] if motion else None
         state["is_motion_sensor"] = bool(motion)
+        if not motion and (state.get("category") or "").lower() == "mcs" and isinstance(dps.get("1"), bool):
+            state["contact_open"] = dps["1"]
+            state["type"] = "sensor"
+            for key in ("3", "2"):
+                val = dps.get(key)
+                if isinstance(val, int) and not isinstance(val, bool) and 0 <= val <= 100:
+                    climate_data["battery"] = val
+                    break
+            climate_data["current_temperature"] = climate_data["humidity"] = None
         channels = []
         if state.get("type") in ("switch", "socket"):
-            channels = extract_switch_channels(dps, lambda i: str(i))
+            channels = extract_switch_channels(dps)
         state["channels"] = channels
 
         state.update({
@@ -719,8 +736,15 @@ class TuyaManager:
             state["is_motion_sensor"] = True
             state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
             cur = hum = None
+        # Door / window contact sensor: doorcontact_state is true when open
+        contact = next((codes[n] for n in ("doorcontact_state", "contact_state") if isinstance(codes.get(n), bool)), None)
+        if contact is not None:
+            state["type"] = "sensor"
+            state["contact_open"] = contact
+            state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
+            cur = hum = None
         if state.get("type") in ("switch", "socket"):
-            state["channels"] = extract_switch_channels(codes, lambda i: f"switch_{i}")
+            state["channels"] = extract_switch_channels(codes, cloud=True)
 
         state.update({
             "online": True,
@@ -1262,7 +1286,9 @@ class TuyaManager:
         
         def _send():
             try:
-                commands = [{"code": "switch_1", "value": is_on}]
+                # DP 1-6 are switch_1..6; the USB block of a power strip is DP 7+ (switch_usb1..)
+                code = f"switch_{channel}" if channel <= 6 else f"switch_usb{channel - 6}"
+                commands = [{"code": code, "value": is_on}]
                 res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
                 return bool(res and res.get("success"))
             except Exception as e:
