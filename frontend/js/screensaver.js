@@ -192,11 +192,46 @@ function radioRowHtml(s, playCall) {
 }
 
 function renderRadioFavorites() {
+  renderBannerRadio();
   const wrap = document.getElementById("radio-favorites-wrap");
   const list = document.getElementById("radio-favorites-list");
   if (!wrap || !list) return;
   wrap.style.display = radioFavorites.length ? "block" : "none";
   list.innerHTML = radioFavorites.map((s, idx) => radioRowHtml(s, `playRadioFavorite(${idx})`)).join("");
+}
+
+// Dashboard banner: favourite stations as one-tap chips, the playing one highlighted, plus a "running" status line
+function renderBannerRadio() {
+  const box = document.getElementById("banner-radio");
+  const statusEl = document.getElementById("banner-radio-status");
+  const chips = document.getElementById("banner-radio-favorites");
+  if (!box || !statusEl || !chips) return;
+
+  const media = state.media || {};
+  const radioPlaying = !!(media.is_playing && media.direct);
+  box.style.display = radioPlaying || radioFavorites.length ? "block" : "none";
+  statusEl.textContent = radioPlaying ? `📻 Radio running: ${media.title}` : "📻 Radio stopped";
+  statusEl.style.color = radioPlaying ? "#86efac" : "rgba(255,255,255,0.8)";
+
+  // Rebuild only when something changed, so a tap is never lost to the 3-second state refresh
+  const sig = JSON.stringify([radioFavorites.map(f => f.url), radioPlaying ? media.url : ""]);
+  if (chips.dataset.sig === sig) return;
+  chips.dataset.sig = sig;
+  chips.innerHTML = radioFavorites.map((s, idx) => {
+    const on = radioPlaying && media.url === s.url;
+    return `<button class="action-btn" onclick="toggleBannerFavorite(${idx})" style="padding: 8px 14px; font-size: 13px; ${on ? "background: linear-gradient(135deg, #16a34a, #15803d);" : "background: rgba(255,255,255,0.1);"}">${on ? "⏹" : "▶"} ${escapeHtml(s.name)}</button>`;
+  }).join("");
+}
+
+function toggleBannerFavorite(index) {
+  const s = radioFavorites[index];
+  if (!s) return;
+  const media = state.media || {};
+  if (media.is_playing && media.direct && media.url === s.url) {
+    fetch("/api/media/stop", { method: "POST" });
+  } else {
+    playRadioUrl(s.url, s.name);
+  }
 }
 
 function renderRadioStations() {
@@ -299,6 +334,8 @@ function renderMediaStatus(media) {
   if (statusEl) statusEl.textContent = media.is_playing ? "Playing" : "Stopped";
   if (toggleBtn) toggleBtn.textContent = media.is_playing ? "⏸ Pause" : "▶ Play";
   if (volSlider && media.volume !== undefined) volSlider.value = media.volume;
+
+  renderBannerRadio();
 
   // Screensaver: show what is playing (hidden when nothing plays)
   const nowCard = document.getElementById("ss-now-playing");

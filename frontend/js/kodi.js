@@ -75,5 +75,9 @@ function renderKodiStatus(kodi) {
   }
 
   if (nowPlayingEl) nowPlayingEl.textContent = title;
-  if (bannerTitle) bannerTitle.textContent = kodi.online ? (kodi.playing ? `Kodi: ${title}` : "Kodi Ready") : "Kodi Offline";
+  // The banner only mentions Kodi while something is playing (no "Offline"/"Ready" clutter)
+  if (bannerTitle) {
+    bannerTitle.textContent = kodi.online && kodi.playing ? `🎬 Kodi: ${title}` : "";
+    bannerTitle.style.display = kodi.online && kodi.playing ? "block" : "none";
+  }
 }

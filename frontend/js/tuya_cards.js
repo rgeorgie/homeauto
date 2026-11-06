@@ -278,6 +278,9 @@ function renderTuyaDevices(allDevices) {
   const selectedHome = updateHomeFilters(allDevices || []);
   const devices = (allDevices || []).filter(d => selectedHome === ALL_HOMES || d.home === selectedHome);
 
+  const welcome = document.getElementById("welcome-title");
+  if (welcome) welcome.textContent = selectedHome === ALL_HOMES ? "Welcome Home" : `Welcome Home, ${selectedHome}`;
+
   if (!devices || devices.length === 0) {
     grid.innerHTML = `<div class="card" style="text-align: center; color: var(--text-muted); padding: 32px;">
       <div style="font-size: 32px; margin-bottom: 8px;">📡</div>

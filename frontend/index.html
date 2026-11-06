@@ -68,9 +68,13 @@
     <section id="view-dashboard" class="view-section active">
       <!-- Quick Action Banner -->
       <div class="action-banner" style="margin-bottom: 24px;">
-        <div>
-          <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 4px;">Welcome Home</h2>
-          <p style="color: rgba(255,255,255,0.8); font-size: 14px;" id="kodi-banner-title">Kodi Ready &bull; Surround Sound</p>
+        <div style="min-width: 0; flex: 1;">
+          <h2 style="font-size: 22px; font-weight: 700; margin-bottom: 4px;" id="welcome-title">Welcome Home</h2>
+          <p style="color: rgba(255,255,255,0.8); font-size: 14px; display: none;" id="kodi-banner-title"></p>
+          <div id="banner-radio" style="display: none; margin-top: 8px;">
+            <div id="banner-radio-status" style="color: rgba(255,255,255,0.8); font-size: 14px;"></div>
+            <div id="banner-radio-favorites" style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px;"></div>
+          </div>
         </div>
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
           <button class="action-btn kodi-btn" onclick="switchView('kodi')">
