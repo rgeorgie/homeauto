@@ -7,6 +7,7 @@ Usage (from the project folder):
     venv/bin/python diag_tuya.py <device_id>
 """
 import json
+import re
 import sys
 
 from backend.config import load_config
@@ -31,7 +32,8 @@ if not (cloud.access_id and cloud.access_secret):
 
 api = TuyaOpenAPI(endpoint=cloud.endpoint, access_id=cloud.access_id, access_secret=cloud.access_secret)
 print(f"Cloud endpoint: {cloud.endpoint}")
-print(f"connect(): {json.dumps(api.connect(), default=str)[:300]}\n")
+conn = api.connect()
+print(f"connect(): success={conn.get('success') if isinstance(conn, dict) else conn}\n")
 
 for d in devices:
     print("=" * 70)
@@ -40,11 +42,14 @@ for d in devices:
         ("device info", f"/v1.0/devices/{d.id}"),
         ("status", f"/v1.0/devices/{d.id}/status"),
         ("specifications", f"/v1.0/devices/{d.id}/specifications"),
+        ("thing-model properties", f"/v2.0/cloud/thing/{d.id}/shadow/properties"),
+        ("thing model", f"/v2.0/cloud/thing/{d.id}/model"),
     ):
         try:
             res = api.get(path)
         except Exception as e:
             res = f"EXCEPTION: {e}"
         text = json.dumps(res, default=str, indent=1) if not isinstance(res, str) else res
+        text = re.sub(r'("local_key":\s*)"[^"]*"', r'\1"<hidden>"', text)  # never print the device key
         print(f"\n--- {title}  GET {path}\n{text[:1800]}")
     print()

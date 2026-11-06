@@ -701,12 +701,20 @@ class TuyaManager:
                 state.update({"online": False, "source": "cloud", "error": "Offline in Tuya Cloud (device not connected)"})
                 return state
             res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/status")
-            if not (res and res.get("success") and isinstance(res.get("result"), list)):
-                logger.debug(f"Cloud status for {dev_id} failed: {res}")
-                reason = (res or {}).get("msg") or "no response"
-                state["cloud_error"] = f"Tuya Cloud: {reason}" + (f" (code {res['code']})" if res and res.get("code") else "")
-                return None
-            codes = {i.get("code"): i.get("value") for i in res["result"] if isinstance(i, dict)}
+            if res and res.get("success") and isinstance(res.get("result"), list) and res["result"]:
+                codes = {i.get("code"): i.get("value") for i in res["result"] if isinstance(i, dict)}
+            else:
+                # Some products (e.g. battery contact sensors) reject the standard status API ("function not support")
+                # and only expose their values through the thing-model properties API
+                props = self.cloud_api.get(f"/v2.0/cloud/thing/{dev_id}/shadow/properties")
+                plist = ((props or {}).get("result") or {}).get("properties") if props and props.get("success") else None
+                if not isinstance(plist, list) or not plist:
+                    logger.debug(f"Cloud status for {dev_id} failed: {res}; properties: {props}")
+                    bad = res if not (res and res.get("success")) else props
+                    reason = (bad or {}).get("msg") or "no response"
+                    state["cloud_error"] = f"Tuya Cloud: {reason}" + (f" (code {bad['code']})" if bad and bad.get("code") else "")
+                    return None
+                codes = {i["code"]: i.get("value") for i in plist if isinstance(i, dict) and i.get("code") and i.get("value") is not None}
         except Exception as e:
             logger.debug(f"Cloud status error for {dev_id}: {e}")
             state["cloud_error"] = f"Tuya Cloud: {e}"
