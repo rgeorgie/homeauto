@@ -4,16 +4,18 @@ import json
 import time
 import threading
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, Any, List
 
 import requests
 
 logger = logging.getLogger("HomeAuto.Radio")
 
-# Public mirrors of the radio-browser.info API; tried in order
-SERVERS = ["de1.api.radio-browser.info", "at1.api.radio-browser.info", "nl1.api.radio-browser.info"]
+# radio-browser.info API hosts, tried in order ("all" is their round-robin name for every live server)
+SERVERS = ["de1.api.radio-browser.info", "all.api.radio-browser.info"]
 CACHE_SECONDS = 3600
 _cache: Dict[tuple, tuple] = {}
+EXECUTOR = ThreadPoolExecutor(max_workers=2, thread_name_prefix="radio")
 
 
 def search_stations(country: str = "BG", query: str = "", limit: int = 150) -> List[Dict[str, Any]]:
@@ -30,7 +32,7 @@ def search_stations(country: str = "BG", query: str = "", limit: int = 150) -> L
     last_error = None
     for host in SERVERS:
         try:
-            res = requests.get(f"https://{host}/json/stations/search", params=params, timeout=6,
+            res = requests.get(f"https://{host}/json/stations/search", params=params, timeout=(4, 8),
                                headers={"User-Agent": "HomeAuto/1.0"})
             res.raise_for_status()
             stations = []
@@ -46,7 +48,9 @@ def search_stations(country: str = "BG", query: str = "", limit: int = 150) -> L
             return stations
         except Exception as e:
             last_error = e
-            logger.debug(f"Radio directory {host} failed: {e}")
+            logger.warning(f"Radio directory {host} failed: {e}")
+    if hit:  # directory unreachable: an old list is better than none
+        return hit[1]
     raise RuntimeError(f"Radio directory unavailable: {last_error}")
 
 

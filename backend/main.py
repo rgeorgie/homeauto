@@ -467,7 +467,13 @@ async def play_media(payload: Dict[str, Any] = Body(...)):
 @app.get("/api/radio/stations")
 async def radio_stations(country: str = "BG", q: str = ""):
     try:
-        return await asyncio.to_thread(radio.search_stations, country, q)
+        # DNS lookups ignore the HTTP timeout, so cap the whole call and always answer the page
+        # Own thread pool: the default one is shared with the Tuya polling, whose slow devices can occupy every thread
+        loop = asyncio.get_running_loop()
+        return await asyncio.wait_for(loop.run_in_executor(radio.EXECUTOR, radio.search_stations, country, q), timeout=15)
+    except asyncio.TimeoutError:
+        logger.warning("Radio directory lookup timed out (DNS or internet problem on this device?)")
+        raise HTTPException(status_code=504, detail="Radio directory timed out - check the internet/DNS on this device")
     except RuntimeError as e:
         raise HTTPException(status_code=502, detail=str(e))
 

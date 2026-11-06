@@ -230,20 +230,35 @@ function playRadioFavorite(index) {
   if (s) playRadioUrl(s.url, s.name);
 }
 
+let radioLoadSeq = 0;
+
 async function loadRadioStations(query) {
   const statusEl = document.getElementById("radio-status");
   const listEl = document.getElementById("radio-stations-list");
   if (!listEl) return;
+  const seq = ++radioLoadSeq; // a slow older search must not overwrite a newer one
   if (statusEl) statusEl.textContent = "Loading stations...";
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 20000);
   try {
-    const res = await fetch(`/api/radio/stations?country=BG&q=${encodeURIComponent(query)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    radioStations = await res.json();
+    const res = await fetch(`/api/radio/stations?country=BG&q=${encodeURIComponent(query)}`, { signal: ctrl.signal });
+    if (!res.ok) {
+      let detail = "";
+      try { detail = (await res.json()).detail || ""; } catch (_) {}
+      throw new Error(detail || `HTTP ${res.status}`);
+    }
+    const stations = await res.json();
+    if (seq !== radioLoadSeq) return;
+    radioStations = stations;
     if (statusEl) statusEl.textContent = `${radioStations.length} station${radioStations.length === 1 ? "" : "s"}`;
     renderRadioStations();
   } catch (e) {
-    if (statusEl) statusEl.textContent = "Radio directory unavailable (check the internet connection)";
+    if (seq !== radioLoadSeq) return;
+    const reason = e.name === "AbortError" ? "no answer from the server" : e.message;
+    if (statusEl) statusEl.textContent = `Radio directory unavailable: ${reason}`;
     listEl.innerHTML = "";
+  } finally {
+    clearTimeout(timer);
   }
 }
 
