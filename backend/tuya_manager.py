@@ -617,6 +617,8 @@ class TuyaManager:
                 logger.warning(f"Tuya device '{st.get('name')}' ({dev_id}) at {st.get('ip')} is offline: {local_error}")
             st["online"] = False
             st["error"] = local_error
+            if st.get("cloud_error"):
+                st["error"] = f"{local_error}; {st['cloud_error']}"
         return self.device_states.get(dev_id, {})
 
     def _apply_dps(self, dev_id: str, dps: Dict[str, Any], source: str) -> Dict[str, Any]:
@@ -657,7 +659,7 @@ class TuyaManager:
                     break
             climate_data["current_temperature"] = climate_data["humidity"] = None
         channels = []
-        if state.get("type") in ("switch", "socket"):
+        if state.get("type") not in ("sensor", "climate", "pet_feeder"):
             channels = extract_switch_channels(dps)
         state["channels"] = channels
 
@@ -681,7 +683,10 @@ class TuyaManager:
 
     def _poll_cloud_device(self, dev_id: str) -> Optional[Dict[str, Any]]:
         """Reads device status from Tuya Cloud (code/value pairs). Returns None if unavailable."""
-        if not self.cloud_api or dev_id not in self.device_states:
+        if dev_id not in self.device_states:
+            return None
+        if not self.cloud_api:
+            self.device_states[dev_id]["cloud_error"] = "Tuya Cloud is not connected (check the credentials in Admin > Tuya Cloud)"
             return None
         state = self.device_states[dev_id]
         now = time.time()
@@ -698,10 +703,13 @@ class TuyaManager:
             res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/status")
             if not (res and res.get("success") and isinstance(res.get("result"), list)):
                 logger.debug(f"Cloud status for {dev_id} failed: {res}")
+                reason = (res or {}).get("msg") or "no response"
+                state["cloud_error"] = f"Tuya Cloud: {reason}" + (f" (code {res['code']})" if res and res.get("code") else "")
                 return None
             codes = {i.get("code"): i.get("value") for i in res["result"] if isinstance(i, dict)}
         except Exception as e:
             logger.debug(f"Cloud status error for {dev_id}: {e}")
+            state["cloud_error"] = f"Tuya Cloud: {e}"
             return None
 
         def first(*names):
@@ -743,7 +751,7 @@ class TuyaManager:
             state["contact_open"] = contact
             state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
             cur = hum = None
-        if state.get("type") in ("switch", "socket"):
+        if state.get("type") not in ("sensor", "climate", "pet_feeder"):
             state["channels"] = extract_switch_channels(codes, cloud=True)
 
         state.update({
@@ -755,6 +763,7 @@ class TuyaManager:
             "battery": int(bat) if isinstance(bat, (int, float)) else state.get("battery"),
             "source": "cloud",
             "cloud_codes": codes,
+            "cloud_error": None,
             "error": None
         })
         return state
@@ -782,8 +791,9 @@ class TuyaManager:
         else:
             def _set_power():
                 try:
-                    # Only pass `switch` for lines beyond the first: BulbDevice defaults to switch=0 (auto-detect)
-                    kwargs = {"switch": channel} if channel > 1 else {}
+                    # Single-line devices: no `switch` argument (BulbDevice auto-detects its DP). Multi-line devices: always name the line
+                    multi = bool((self.device_states.get(dev_id) or {}).get("channels"))
+                    kwargs = {"switch": channel} if channel > 1 or multi else {}
                     if is_on:
                         dev.turn_on(**kwargs)
                     else:
