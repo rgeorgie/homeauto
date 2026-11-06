@@ -22,6 +22,7 @@ class TuyaDeviceConfig(BaseModel):
 
 class TuyaConfig(BaseModel):
     mode: str = "local" # local, cloud, both
+    realtime_messages: bool = False # listen to Tuya's message service for instant cloud-device updates (needs Message Service enabled on iot.tuya.com)
     cloud: CloudConfig = Field(default_factory=CloudConfig)
     devices: List[TuyaDeviceConfig] = Field(default_factory=list)
 

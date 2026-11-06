@@ -398,9 +398,13 @@ function createDeviceCardHtml(dev) {
     } else if (dev.sd_status) {
       readings.push(`<div><div class="sensor-label">SD card</div><div class="sensor-value" style="font-size: 22px;">💾 ${escapeHtml(dev.sd_status)}</div></div>`);
     }
-    const body = readings.length
+    const events = [];
+    if (dev.last_ring) events.push(`🔔 Last ring: <strong style="color: #fff;">${escapeHtml(dev.last_ring)}</strong>`);
+    if (dev.last_alert) events.push(`⚠️ ${escapeHtml(dev.last_alert)}: <strong style="color: #fff;">${escapeHtml(dev.last_alert_at || "")}</strong>`);
+    const eventsHtml = events.length ? `<div style="font-size: 12px; color: var(--text-muted); margin-top: 12px; display: flex; flex-direction: column; gap: 2px;">${events.map(e => `<div>${e}</div>`).join("")}</div>` : "";
+    const body = (readings.length
       ? `<div class="sensor-readings">${readings.join("")}</div>`
-      : `<div style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">${dev.online ? "No readings reported yet" : "Waiting for the camera to report"}</div>`;
+      : `<div style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">${dev.online ? "No readings reported yet" : "Waiting for the camera to report"}</div>`) + eventsHtml;
     return `
       <div class="card" id="card-${dev.id}">
         <div>

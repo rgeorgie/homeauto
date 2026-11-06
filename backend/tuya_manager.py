@@ -1,4 +1,6 @@
 import re
+import json
+import base64
 import time
 import datetime
 import logging
@@ -7,7 +9,7 @@ from typing import Dict, Any, List, Optional
 import tinytuya
 
 try:
-    from tuya_connector import TuyaOpenAPI
+    from tuya_connector import TuyaOpenAPI, TuyaOpenPulsar, TuyaCloudPulsarTopic
     TUYA_CONNECTOR_AVAILABLE = True
 except ImportError:
     TUYA_CONNECTOR_AVAILABLE = False
@@ -339,6 +341,12 @@ def extract_switch_channels(values: Dict[str, Any], cloud: bool = False) -> List
     return channels if len(channels) >= 2 else []
 
 
+def pulsar_ws_endpoint(openapi_endpoint: str) -> str:
+    """Message-service websocket for a Tuya OpenAPI endpoint, e.g. https://openapi.tuyaeu.com -> wss://mqe.tuyaeu.com:8285/"""
+    m = re.search(r"openapi[\w-]*\.(tuya\w+)\.com", openapi_endpoint or "")
+    return f"wss://mqe.{m.group(1) if m else 'tuyaeu'}.com:8285/"
+
+
 SD_STATUS_LABELS = {1: "Normal", 2: "Error", 3: "Full", 4: "Formatting", 5: "No SD card"}
 
 
@@ -373,6 +381,9 @@ class TuyaManager:
         self.location_errors: List[str] = []
         self._feed_log: Dict[str, List[tuple]] = {}  # dev_id -> [(timestamp, portions)] dispensed through HomeAuto
         self._feeding_fetched_at: Dict[str, float] = {}
+        self._pulsar: Optional[Any] = None
+        self._pulsar_started_at: float = 0.0
+        self._pulsar_stats: Dict[str, Any] = {"messages": 0, "last_message_at": None, "last_error": None}
         self._poll_task: Optional[asyncio.Task] = None
         self._init_cloud()
         self._init_local_devices()
@@ -385,6 +396,7 @@ class TuyaManager:
 
     def stop_background_service(self):
         self._running = False
+        self._stop_pulsar()
         if self._poll_task:
             self._poll_task.cancel()
 
@@ -394,6 +406,7 @@ class TuyaManager:
         self.device_states.clear()
         self._init_cloud()
         self._init_local_devices()
+        self._stop_pulsar()  # restarted by the poll loop if still enabled
         logger.info("TuyaManager configuration reloaded.")
 
     async def _background_poll_loop(self):
@@ -409,6 +422,7 @@ class TuyaManager:
                     logger.debug(f"Poll error for {dev_id}: {e}")
 
         while self._running:
+            self._ensure_pulsar()
             try:
                 dev_ids = list(self.device_states.keys()) if self.cloud_api else list(self.local_devices.keys())
                 if dev_ids:
@@ -437,6 +451,96 @@ class TuyaManager:
             except Exception as e:
                 logger.error(f"Failed to connect to Tuya Cloud API: {e}")
                 self.cloud_api = None
+
+    # ----- Tuya message service (instant updates for cloud-polled devices) -----
+
+    def _ensure_pulsar(self):
+        """Starts the message-service listener when enabled, and restarts it if its thread died (checked every poll cycle)."""
+        if not (self.config.realtime_messages and self.cloud_api and TUYA_CONNECTOR_AVAILABLE):
+            if self._pulsar:
+                self._stop_pulsar()
+            return
+        if self._pulsar and self._pulsar.is_alive():
+            return
+        if time.time() - self._pulsar_started_at < 60:  # back off between restarts
+            return
+        self._stop_pulsar()
+        self._pulsar_started_at = time.time()
+        try:
+            cloud = self.config.cloud
+            self._pulsar = TuyaOpenPulsar(cloud.access_id, cloud.access_secret,
+                                          pulsar_ws_endpoint(cloud.endpoint), TuyaCloudPulsarTopic.PROD)
+            self._pulsar.add_message_listener(self._on_pulsar_message)
+            self._pulsar.start()
+            logger.info(f"Listening to Tuya message service at {pulsar_ws_endpoint(cloud.endpoint)}")
+        except Exception as e:
+            self._pulsar = None
+            self._pulsar_stats["last_error"] = str(e)
+            logger.error(f"Could not start Tuya message service listener: {e}")
+
+    def _stop_pulsar(self):
+        if self._pulsar:
+            try:
+                self._pulsar.stop()
+            except Exception:
+                pass
+            self._pulsar = None
+
+    def realtime_status(self) -> Dict[str, Any]:
+        connected = False
+        try:
+            connected = bool(self._pulsar and self._pulsar.ws_app.sock and self._pulsar.ws_app.sock.status == 101)
+        except Exception:
+            pass
+        return {"enabled": bool(self.config.realtime_messages), "connected": connected, **self._pulsar_stats}
+
+    def _on_pulsar_message(self, text: str):
+        """Called from the message-service thread with one decrypted message."""
+        self._pulsar_stats["messages"] += 1
+        self._pulsar_stats["last_message_at"] = time.strftime("%H:%M:%S")
+        try:
+            msg = json.loads(text)
+        except ValueError:
+            return
+        if not isinstance(msg, dict):
+            return
+        dev_id = msg.get("devId") or (msg.get("data") or {}).get("devId")
+        state = self.device_states.get(dev_id)
+        if state is None:
+            return
+
+        biz = msg.get("bizCode")
+        if biz in ("online", "offline"):
+            state["online"] = biz == "online"
+            state["error"] = None if biz == "online" else "Offline in Tuya Cloud (device not connected)"
+            return
+
+        status = msg.get("status")
+        if not isinstance(status, list):
+            return
+        new_codes = {i["code"]: i.get("value") for i in status if isinstance(i, dict) and i.get("code")}
+        self._note_camera_events(state, new_codes)
+        # Only cloud-polled devices: locally reachable ones are refreshed every few seconds already,
+        # and a partial cloud update must not overwrite their state.
+        if state.get("source") != "cloud" or not state.get("cloud_codes"):
+            return
+        self._apply_cloud_codes(state, {**state["cloud_codes"], **new_codes})
+
+    @staticmethod
+    def _note_camera_events(state: Dict[str, Any], codes: Dict[str, Any]):
+        """Records doorbell rings and camera alerts from a pushed status message."""
+        now = time.strftime("%H:%M")
+        for code in ("doorbell_active", "doorbell_pic"):
+            if codes.get(code):  # empty string means "nothing happened"
+                state["last_ring"] = now
+        alarm = codes.get("alarm_message")
+        if isinstance(alarm, str) and alarm:
+            try:
+                cmd = json.loads(base64.b64decode(alarm + "=" * (-len(alarm) % 4))).get("cmd", "")
+            except Exception:
+                cmd = ""
+            state["last_alert"] = {"ipc_human": "Person detected", "ipc_motion": "Motion detected"}.get(cmd, "Alert")
+            state["last_alert_at"] = now
 
     def _init_local_devices(self):
         for dev_conf in self.config.devices:
@@ -749,6 +853,10 @@ class TuyaManager:
             state["cloud_error"] = f"Tuya Cloud: {e}"
             return None
 
+        return self._apply_cloud_codes(state, codes)
+
+    def _apply_cloud_codes(self, state: Dict[str, Any], codes: Dict[str, Any]) -> Dict[str, Any]:
+        """Turns Tuya Cloud code/value pairs (from a poll or a pushed message) into the device state."""
         def first(*names):
             for n in names:
                 v = codes.get(n)

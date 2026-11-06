@@ -70,6 +70,7 @@ exec $CHROMIUM_BIN \
   --disable-session-crashed-bubble \
   --disable-features=Translate,OptimizationHints,MediaRouter \
   --check-for-update-interval=31536000 \
+  --password-store=basic \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --touch-events=enabled \

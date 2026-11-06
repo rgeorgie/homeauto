@@ -271,6 +271,8 @@ function populateAdminFields(cfg) {
   renderAdminDevicesTable(cfg.tuya?.devices || []);
 
   // Tuya Cloud
+  const realtimeBox = document.getElementById("tuya-realtime");
+  if (realtimeBox) realtimeBox.checked = Boolean(cfg.tuya?.realtime_messages);
   if (cfg.tuya?.cloud) {
     document.getElementById("tuya-cloud-id").value = cfg.tuya.cloud.access_id || "";
     document.getElementById("tuya-cloud-secret").value = cfg.tuya.cloud.access_secret || "";
@@ -457,6 +459,7 @@ async function saveFullConfig() {
     },
     tuya: {
       mode: "local",
+      realtime_messages: Boolean(document.getElementById("tuya-realtime")?.checked),
       cloud: {
         access_id: document.getElementById("tuya-cloud-id").value.trim(),
         access_secret: document.getElementById("tuya-cloud-secret").value.trim(),

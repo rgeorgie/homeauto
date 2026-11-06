@@ -163,6 +163,10 @@ async def get_full_status():
     }
 
 # Tuya / SmartLife Devices
+@app.get("/api/tuya/realtime")
+async def tuya_realtime_status():
+    return tuya_mgr.realtime_status()
+
 @app.get("/api/devices")
 async def list_devices():
     return await tuya_mgr.get_all_states()

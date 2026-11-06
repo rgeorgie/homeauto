@@ -10,6 +10,9 @@ server:
 # You can use Local Control (recommended, via TinyTuya) or Cloud API
 tuya:
   mode: "local" # options: "local", "cloud", or "both"
+  # Instant updates (window/door sensors, doorbell rings) via Tuya's message service.
+  # Needs "Message Service" enabled for the project on iot.tuya.com; only one program per project can listen.
+  realtime_messages: false
   
   # Cloud credentials (required for initial device scan or cloud mode)
   # Obtain from iot.tuya.com (free developer account linked to SmartLife app)
