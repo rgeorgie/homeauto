@@ -116,6 +116,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def no_cache_frontend(request: Request, call_next):
+    """The kiosk browser must always revalidate the frontend files, or it keeps showing a stale page after an update."""
+    response = await call_next(request)
+    if not request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-cache"
+    return response
+
 # ----------------- WebSocket Endpoint -----------------
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
