@@ -530,3 +530,136 @@ async function saveFullConfig() {
     if (saveBtn) saveBtn.textContent = "💾 Save All Configuration & Apply";
   }
 }
+
+
+// ---------------------------------------------------------------------------
+// Raspberry Pi controls (Wi-Fi, Bluetooth, desktop, power) - only usable on the Pi's own screen
+// ---------------------------------------------------------------------------
+
+async function piApi(path, body) {
+  const opts = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
+  const res = await fetch(`/api/pi/${path}`, opts);
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* non-JSON error page */ }
+  if (res.status === 403) {
+    const note = document.getElementById("pi-remote-note");
+    const controls = document.getElementById("pi-controls");
+    if (note) note.style.display = "block";
+    if (controls) controls.style.display = "none";
+    throw new Error("Only available on the Raspberry Pi's own screen");
+  }
+  if (!res.ok) throw new Error(data.detail || `Request failed (${res.status})`);
+  return data;
+}
+
+async function piAction(path, body, busyBtn) {
+  if (busyBtn) busyBtn.disabled = true;
+  try {
+    const data = await piApi(path, body);
+    showToast(data.message || (data.ok ? "Done" : "Failed"), data.ok ? 3000 : 6000);
+    return data;
+  } catch (e) {
+    showToast(e.message, 5000);
+    return null;
+  } finally {
+    if (busyBtn) busyBtn.disabled = false;
+  }
+}
+
+async function refreshPiStatus() {
+  try {
+    const st = await piApi("status");
+    const wifiBox = document.getElementById("pi-wifi-toggle");
+    const btBox = document.getElementById("pi-bt-toggle");
+    const cur = document.getElementById("pi-wifi-current");
+    wifiBox.disabled = !st.wifi.available;
+    wifiBox.checked = Boolean(st.wifi.enabled);
+    cur.textContent = !st.wifi.available ? `(${st.wifi.message})` : st.wifi.ssid ? `· ${st.wifi.ssid} (${st.wifi.signal}%)` : st.wifi.enabled ? "· not connected" : "· off";
+    btBox.disabled = !st.bluetooth.available;
+    btBox.checked = Boolean(st.bluetooth.powered);
+    document.getElementById("pi-bt-note").textContent = st.bluetooth.available
+      ? "Turning it off disconnects the speaker used for audio."
+      : st.bluetooth.message;
+  } catch (e) { /* 403 already handled in piApi */ }
+}
+
+function renderWifiList(networks) {
+  const list = document.getElementById("pi-wifi-list");
+  list.innerHTML = networks.length ? "" : `<div class="form-hint">No networks found</div>`;
+  networks.forEach(n => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "device-toggle-btn" + (n.in_use ? " is-on" : "");
+    row.style.cssText = "padding: 10px 14px; font-size: 14px; justify-content: space-between;";
+    const name = document.createElement("span");
+    name.textContent = `${n.secured ? "🔒" : "🔓"} ${n.ssid}`;
+    const sig = document.createElement("span");
+    sig.textContent = `${n.signal}%`;
+    row.append(name, sig);
+    row.onclick = () => {
+      document.getElementById("pi-wifi-ssid").value = n.ssid;
+      document.getElementById("pi-wifi-password").focus();
+    };
+    list.appendChild(row);
+  });
+}
+
+function initPiControls() {
+  const tab = document.querySelector('.admin-tab-btn[data-tab="pi"]');
+  if (!tab) return;
+  tab.addEventListener("click", () => refreshPiStatus());
+
+  document.getElementById("pi-wifi-toggle").addEventListener("change", async (e) => {
+    const box = e.target;
+    const want = box.checked;
+    if (!want && !confirm("Turn Wi-Fi off? If this Pi is only connected by Wi-Fi it will disappear from the network.")) { box.checked = true; return; }
+    const r = await piAction("wifi/power", { on: want }, box);
+    if (!r || !r.ok) box.checked = !want;
+    refreshPiStatus();
+  });
+
+  document.getElementById("pi-wifi-scan").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    btn.textContent = "🔍 Scanning...";
+    const r = await piAction("wifi/scan", {}, btn);
+    btn.textContent = "🔍 Scan networks";
+    if (r && r.ok) renderWifiList(r.networks || []);
+  });
+
+  document.getElementById("pi-wifi-connect").addEventListener("click", async (e) => {
+    const ssid = document.getElementById("pi-wifi-ssid").value.trim();
+    const pw = document.getElementById("pi-wifi-password");
+    if (!ssid) { showToast("Pick or type a network name first"); return; }
+    showToast(`Connecting to ${ssid}...`);
+    const r = await piAction("wifi/connect", { ssid, password: pw.value }, e.currentTarget);
+    if (r && r.ok) pw.value = "";
+    refreshPiStatus();
+  });
+
+  document.getElementById("pi-bt-toggle").addEventListener("change", async (e) => {
+    const box = e.target;
+    const want = box.checked;
+    const r = await piAction("bluetooth/power", { on: want }, box);
+    if (!r || !r.ok) box.checked = !want;
+    refreshPiStatus();
+  });
+
+  document.getElementById("pi-open-desktop").addEventListener("click", async (e) => {
+    const minutes = parseInt(document.getElementById("pi-desktop-minutes").value, 10);
+    if (!confirm(`Close the dashboard and show the desktop? It comes back automatically in ${minutes} min.`)) return;
+    await piAction("desktop", { minutes }, e.currentTarget);
+  });
+
+  document.getElementById("pi-restart-kiosk").addEventListener("click", (e) => piAction("restart-kiosk", {}, e.currentTarget));
+  document.getElementById("pi-restart-app").addEventListener("click", (e) => {
+    if (confirm("Restart HomeAuto? The dashboard reloads in a few seconds.")) piAction("restart-app", {}, e.currentTarget);
+  });
+  document.getElementById("pi-reboot").addEventListener("click", (e) => {
+    if (confirm("Reboot the Raspberry Pi now?")) piAction("power", { action: "reboot" }, e.currentTarget);
+  });
+  document.getElementById("pi-shutdown").addEventListener("click", (e) => {
+    if (confirm("Shut down the Raspberry Pi? It must be unplugged and plugged back in to start again.")) piAction("power", { action: "shutdown" }, e.currentTarget);
+  });
+}
+
+document.addEventListener("DOMContentLoaded", initPiControls);

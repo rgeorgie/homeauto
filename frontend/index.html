@@ -339,6 +339,7 @@
         <button class="admin-tab-btn" data-tab="screensaver">🖼️ Screensaver & YouTube</button>
         <button class="admin-tab-btn" data-tab="weather">🌤️ Weather & Location</button>
         <button class="admin-tab-btn" data-tab="server">⚙️ Server & Network</button>
+        <button class="admin-tab-btn" data-tab="pi">🍓 Raspberry Pi</button>
       </div>
 
       <!-- SUBTAB 1: DEVICES SETUP -->
@@ -682,6 +683,83 @@
               <label class="form-label">HTTP Web Port</label>
               <input type="number" id="server-port" class="form-input" value="80">
             </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB: RASPBERRY PI CONTROLS (Wi-Fi, Bluetooth, desktop, power) -->
+      <div id="admin-subview-pi" class="admin-subview">
+        <div id="pi-remote-note" class="card" style="display: none; border-color: rgba(251, 191, 36, 0.4);">
+          <div style="font-size: 14px;">🔒 These controls only work on the Raspberry Pi's own screen (<code>http://127.0.0.1</code>). Open the dashboard on the Pi to use them.</div>
+        </div>
+
+        <div id="pi-controls" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 20px;">
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Wi-Fi <span id="pi-wifi-current" style="font-size: 13px; font-weight: 400; color: var(--text-muted);"></span></div>
+              <div class="card-icon">📶</div>
+            </div>
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="pi-wifi-toggle" style="width: 18px; height: 18px;">
+              <span>Wi-Fi radio on</span>
+            </label>
+            <div style="display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap;">
+              <button class="action-btn" id="pi-wifi-scan" style="padding: 10px 18px; font-size: 14px;">🔍 Scan networks</button>
+            </div>
+            <div id="pi-wifi-list" style="margin-top: 12px; display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow-y: auto;"></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px;">
+              <input type="text" id="pi-wifi-ssid" class="form-input" placeholder="Network name (SSID)">
+              <input type="password" id="pi-wifi-password" class="form-input" placeholder="Password (blank if open)">
+            </div>
+            <button class="action-btn" id="pi-wifi-connect" style="margin-top: 10px; padding: 10px 18px; font-size: 14px;">🔗 Connect</button>
+            <div class="form-hint">Switching network drops this connection for a moment. A wrong password leaves the previous network in place.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Bluetooth</div>
+              <div class="card-icon">🔵</div>
+            </div>
+            <label class="form-checkbox-label">
+              <input type="checkbox" id="pi-bt-toggle" style="width: 18px; height: 18px;">
+              <span>Bluetooth radio on</span>
+            </label>
+            <div class="form-hint" id="pi-bt-note">Turning it off disconnects the speaker used for audio.</div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Desktop</div>
+              <div class="card-icon">🖥️</div>
+            </div>
+            <div class="form-hint" style="margin-top: 0;">Closes the dashboard so you can use the Raspberry Pi desktop, then brings it back automatically.</div>
+            <div style="display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap;">
+              <span style="font-size: 14px;">Return after</span>
+              <select id="pi-desktop-minutes" class="form-select" style="width: auto;">
+                <option value="5">5 min</option>
+                <option value="10" selected>10 min</option>
+                <option value="30">30 min</option>
+                <option value="60">1 hour</option>
+              </select>
+              <button class="action-btn" id="pi-open-desktop" style="padding: 10px 18px; font-size: 14px;">🖥️ Open desktop</button>
+            </div>
+            <div class="form-hint">To come back sooner, use the terminal: <code>systemctl --user start homeauto-kiosk.service</code></div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">Services &amp; Power</div>
+              <div class="card-icon">⏻</div>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button class="action-btn" id="pi-restart-kiosk" style="padding: 10px 18px; font-size: 14px; background: rgba(255,255,255,0.1);">🔄 Restart dashboard screen</button>
+              <button class="action-btn" id="pi-restart-app" style="padding: 10px 18px; font-size: 14px; background: rgba(255,255,255,0.1);">♻️ Restart HomeAuto</button>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px;">
+              <button class="action-btn" id="pi-reboot" style="padding: 10px 18px; font-size: 14px; background: #d97706;">🔁 Reboot</button>
+              <button class="action-btn" id="pi-shutdown" style="padding: 10px 18px; font-size: 14px; background: #dc2626;">⏻ Shut down</button>
+            </div>
+            <div class="form-hint">After a shut down, the Pi must be unplugged and plugged back in to start.</div>
           </div>
         </div>
       </div>

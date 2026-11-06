@@ -4,7 +4,7 @@ import logging
 from typing import List, Dict, Any, Set
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
@@ -17,6 +17,7 @@ from backend.kodi_manager import KodiManager
 from backend.media_player import MediaPlayer
 from backend.screensaver_manager import ScreensaverManager
 from backend.system_manager import SystemManager
+from backend import pi_control
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HomeAuto.Server")
@@ -517,6 +518,63 @@ async def toggle_display(payload: Dict[str, bool] = Body(...)):
     power_on = payload.get("power_on", True)
     success = SystemManager.set_display_power(power_on)
     return {"status": "ok" if success else "failed", "power_on": power_on}
+
+# ----------------- Raspberry Pi controls (Wi-Fi, Bluetooth, desktop, power) -----------------
+# These run system commands and the server has no login, so only requests from the Pi itself are accepted
+# (the kiosk browser talks to 127.0.0.1). Other devices on the network get 403.
+
+def _require_local(request: Request):
+    host = request.client.host if request.client else ""
+    if host not in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"):
+        raise HTTPException(status_code=403, detail="Raspberry Pi controls only work from the Pi's own screen (http://127.0.0.1)")
+
+async def _pi(request: Request, func, *args):
+    _require_local(request)
+    return await asyncio.get_event_loop().run_in_executor(None, func, *args)
+
+@app.get("/api/pi/status")
+async def pi_status(request: Request):
+    _require_local(request)
+    loop = asyncio.get_event_loop()
+    wifi, bt = await asyncio.gather(loop.run_in_executor(None, pi_control.wifi_status),
+                                    loop.run_in_executor(None, pi_control.bluetooth_status))
+    return {"local": True, "wifi": wifi, "bluetooth": bt}
+
+@app.get("/api/pi/wifi/scan")
+async def pi_wifi_scan(request: Request):
+    return await _pi(request, pi_control.wifi_scan)
+
+@app.post("/api/pi/wifi/power")
+async def pi_wifi_power(request: Request, payload: Dict[str, Any] = Body(...)):
+    return await _pi(request, pi_control.wifi_set_power, bool(payload.get("on")))
+
+@app.post("/api/pi/wifi/connect")
+async def pi_wifi_connect(request: Request, payload: Dict[str, Any] = Body(...)):
+    return await _pi(request, pi_control.wifi_connect, str(payload.get("ssid", "")), str(payload.get("password", "")))
+
+@app.post("/api/pi/bluetooth/power")
+async def pi_bluetooth_power(request: Request, payload: Dict[str, Any] = Body(...)):
+    return await _pi(request, pi_control.bluetooth_set_power, bool(payload.get("on")))
+
+@app.post("/api/pi/desktop")
+async def pi_open_desktop(request: Request, payload: Dict[str, Any] = Body(default={})):
+    return await _pi(request, pi_control.open_desktop, payload.get("minutes", 10))
+
+@app.post("/api/pi/dashboard")
+async def pi_return_dashboard(request: Request):
+    return await _pi(request, pi_control.return_to_dashboard)
+
+@app.post("/api/pi/restart-kiosk")
+async def pi_restart_kiosk(request: Request):
+    return await _pi(request, pi_control.restart_kiosk)
+
+@app.post("/api/pi/restart-app")
+async def pi_restart_app(request: Request):
+    return await _pi(request, pi_control.restart_app)
+
+@app.post("/api/pi/power")
+async def pi_power(request: Request, payload: Dict[str, Any] = Body(...)):
+    return await _pi(request, pi_control.power, str(payload.get("action", "")))
 
 # Location Auto-Detection
 @app.post("/api/weather/detect-location")
