@@ -297,7 +297,13 @@ function renderTuyaDevices(allDevices) {
     // Power Toggle
     const toggleBtn = document.querySelectorAll(`.device-toggle-btn[data-id="${dev.id}"]`);
     toggleBtn.forEach(btn => {
-      btn.onclick = () => toggleDevicePower(dev.id, !dev.is_on);
+      if (btn.dataset.channel) {
+        // One line of a multi-line switch
+        const ch = (dev.channels || []).find(c => String(c.index) === btn.dataset.channel);
+        btn.onclick = () => toggleDevicePower(dev.id, !(ch && ch.is_on), parseInt(btn.dataset.channel));
+      } else {
+        btn.onclick = () => toggleDevicePower(dev.id, !dev.is_on);
+      }
     });
 
     // Light Brightness Slider
@@ -384,10 +390,23 @@ function createDeviceCardHtml(dev) {
   if (isSensor) {
     const has = v => v !== undefined && v !== null;
     const readings = [];
-    if (has(dev.current_temperature)) readings.push(`<div><div class="sensor-label">Temperature</div><div class="sensor-value">${parseFloat(dev.current_temperature).toFixed(1)}°C</div></div>`);
-    if (has(dev.humidity)) readings.push(`<div><div class="sensor-label">Humidity</div><div class="sensor-value">💧 ${dev.humidity}%</div></div>`);
-    if (has(dev.battery)) readings.push(`<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${dev.battery}%</div></div>`);
-    const body = readings.length
+    const batteryReading = () => has(dev.battery)
+      ? `<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${dev.battery}%</div></div>`
+      : dev.battery_state ? `<div><div class="sensor-label">Battery</div><div class="sensor-value">🔋 ${escapeHtml(dev.battery_state)}</div></div>` : "";
+    if (dev.is_motion_sensor || dev.category === "pir") {
+      // Motion detector: only the motion state and the battery level
+      const known = dev.motion === true || dev.motion === false;
+      const detected = dev.motion === true;
+      const stateText = !known ? "Unknown" : detected ? "Motion detected" : "Clear";
+      const stateColor = !dev.online || !known ? "var(--text-muted)" : detected ? "var(--accent-amber)" : "var(--accent-green)";
+      readings.push(`<div><div class="sensor-label">Motion</div><div class="sensor-value" style="color: ${stateColor}; font-size: 22px;">${detected ? "🚶" : "✓"} ${stateText}</div></div>`);
+      readings.push(batteryReading());
+    } else {
+      if (has(dev.current_temperature)) readings.push(`<div><div class="sensor-label">Temperature</div><div class="sensor-value">${parseFloat(dev.current_temperature).toFixed(1)}°C</div></div>`);
+      if (has(dev.humidity)) readings.push(`<div><div class="sensor-label">Humidity</div><div class="sensor-value">💧 ${dev.humidity}%</div></div>`);
+      readings.push(batteryReading());
+    }
+    const body = readings.filter(Boolean).length
       ? `<div class="sensor-readings">${readings.join("")}</div>`
       : `<div style="color: var(--text-muted); font-size: 13px; margin-top: 14px;">${dev.online ? "No readings reported yet" : "Waiting for the sensor to report"}</div>`;
     return `
@@ -467,6 +486,11 @@ function createDeviceCardHtml(dev) {
   // --- 2. PET FEEDER / PET WATERER CARD ---
   if (isPetFeeder) {
     const lastFed = dev.last_fed || "Today";
+    const records = dev.feeding_records || [];
+    const recordsHtml = records.length
+      ? records.map(r => `<div style="display: flex; justify-content: space-between; padding: 4px 0; border-top: 1px solid var(--border-color);"><span>${escapeHtml(r.time)}</span><span>${r.portions} portion${r.portions === 1 ? "" : "s"}</span></div>`).join("")
+      : `<div style="padding: 4px 0; border-top: 1px solid var(--border-color); color: var(--text-muted);">No feedings recorded today</div>`;
+    const recordsNote = dev.feeding_source === "homeauto" ? " (HomeAuto only)" : "";
     return `
       <div class="card" id="card-${dev.id}" style="border-color: rgba(168, 85, 247, 0.35);">
         <div>
@@ -487,6 +511,12 @@ function createDeviceCardHtml(dev) {
               Last fed: <strong style="color: #fff;">${lastFed}</strong>
             </div>
           </div>
+          <div style="font-size: 12px;">
+            <div style="color: var(--text-muted); text-transform: uppercase; font-size: 11px; margin-bottom: 4px;">
+              Today's feedings &bull; ${dev.feeding_total || 0} total${recordsNote}
+            </div>
+            <div style="max-height: 120px; overflow-y: auto;">${recordsHtml}</div>
+          </div>
 
           <div style="display: flex; gap: 10px; margin-top: 14px;">
             <button class="action-btn btn-feed-pet" data-id="${dev.id}" style="flex: 1; justify-content: center; background: linear-gradient(135deg, #a855f7, #7e22ce); font-size: 15px;">
@@ -499,6 +529,7 @@ function createDeviceCardHtml(dev) {
   }
 
   // --- 3. LIGHT / SWITCH / SOCKET CARD ---
+  const channels = !isLight && Array.isArray(dev.channels) ? dev.channels : [];
   return `
     <div class="card" id="card-${dev.id}">
       <div>
@@ -510,9 +541,19 @@ function createDeviceCardHtml(dev) {
           <div class="card-icon">${icon}</div>
         </div>
 
-        <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}">
-          ${dev.is_on ? '⚡ ON' : '○ OFF'}
-        </button>
+        ${channels.length > 1 ? `
+          <div style="display: flex; flex-direction: column; gap: 8px;">
+            ${channels.map(ch => `
+              <button class="device-toggle-btn ${ch.is_on ? 'is-on' : ''}" data-id="${dev.id}" data-channel="${ch.index}">
+                ${ch.is_on ? '⚡' : '○'} Line ${ch.index} &bull; ${ch.is_on ? 'ON' : 'OFF'}
+              </button>
+            `).join("")}
+          </div>
+        ` : `
+          <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}">
+            ${dev.is_on ? '⚡ ON' : '○ OFF'}
+          </button>
+        `}
       </div>
 
       ${isLight ? `
@@ -528,15 +569,15 @@ function createDeviceCardHtml(dev) {
   `;
 }
 
-async function toggleDevicePower(deviceId, newState) {
+async function toggleDevicePower(deviceId, newState, channel) {
   try {
     const res = await fetch(`/api/devices/${deviceId}/power`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_on: newState })
+      body: JSON.stringify(channel ? { is_on: newState, channel } : { is_on: newState })
     });
     if (res.ok) {
-      showToast(`Device turned ${newState ? 'ON' : 'OFF'}`);
+      showToast(`${channel ? `Line ${channel}` : "Device"} turned ${newState ? 'ON' : 'OFF'}`);
     } else {
       showToast("Device command failed", 2000);
     }

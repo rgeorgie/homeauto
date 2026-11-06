@@ -1,5 +1,6 @@
 import re
 import time
+import datetime
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
@@ -17,6 +18,9 @@ logger = logging.getLogger("HomeAuto.Tuya")
 
 # Min seconds between Tuya Cloud status queries per device (protects the cloud API quota)
 CLOUD_POLL_INTERVAL_SECONDS = 60
+# Pet feeder feeding-log refresh interval, and the Tuya log codes that record a dispense (in order of preference)
+FEEDING_REFRESH_SECONDS = 300
+FEED_LOG_CODES = ("feed_report", "manual_feed", "feed_state")
 
 def resolve_tuya_device_type(category: str = "", product_name: str = "", name: str = "") -> str:
     """Resolves device type from the Tuya category code (authoritative) and then product/device names."""
@@ -279,6 +283,49 @@ def extract_tuya_climate_data(dps: Dict[str, Any], dev_type: str = "climate") ->
     }
 
 
+BATTERY_STATE_LABELS = {"low": "Low", "middle": "Medium", "high": "High"}
+MAX_SWITCH_CHANNELS = 8
+
+
+def extract_motion_data(dps: Dict[str, Any], category: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Detects a PIR motion detector from local DPS and extracts its state and battery.
+    Tuya 'pir' category: DP 1 pir = "pir" (motion) / "none", DP 3 battery_state = low/middle/high, DP 4 battery_percentage.
+    Returns None when the DPS do not look like a motion detector.
+    """
+    pir = dps.get('1')
+    looks_like_pir = isinstance(pir, str) and pir.lower() in ("pir", "none")
+    if not looks_like_pir and (category or "").lower() != "pir":
+        return None
+
+    battery = None
+    for key in ('4', '3'):
+        val = dps.get(key)
+        if isinstance(val, (int, float)) and not isinstance(val, bool) and 0 <= val <= 100:
+            battery = int(val)
+            break
+    battery_state = dps.get('3') if isinstance(dps.get('3'), str) else None
+    return {
+        "motion": (pir.lower() == "pir") if isinstance(pir, str) else None,
+        "battery": battery,
+        "battery_state": BATTERY_STATE_LABELS.get((battery_state or "").lower()),
+    }
+
+
+def extract_switch_channels(values: Dict[str, Any], key_for) -> List[Dict[str, Any]]:
+    """
+    Returns [{index, is_on}] for the consecutive boolean switch lines starting at line 1,
+    or [] when the device has fewer than 2 lines. `key_for(i)` maps a line number to its key in `values`.
+    """
+    channels = []
+    for i in range(1, MAX_SWITCH_CHANNELS + 1):
+        val = values.get(key_for(i))
+        if not isinstance(val, bool):
+            break
+        channels.append({"index": i, "is_on": val})
+    return channels if len(channels) >= 2 else []
+
+
 class TuyaManager:
     def __init__(self, config: TuyaConfig):
         self.config = config
@@ -287,6 +334,8 @@ class TuyaManager:
         self.cloud_api: Optional[Any] = None
         self._running: bool = False
         self.location_errors: List[str] = []
+        self._feed_log: Dict[str, List[tuple]] = {}  # dev_id -> [(timestamp, portions)] dispensed through HomeAuto
+        self._feeding_fetched_at: Dict[str, float] = {}
         self._poll_task: Optional[asyncio.Task] = None
         self._init_cloud()
         self._init_local_devices()
@@ -318,6 +367,7 @@ class TuyaManager:
             async with sem:
                 try:
                     await loop.run_in_executor(None, self._sync_poll_device, dev_id)
+                    await loop.run_in_executor(None, self._refresh_feeding_records, dev_id)
                 except Exception as e:
                     logger.debug(f"Poll error for {dev_id}: {e}")
 
@@ -579,6 +629,21 @@ class TuyaManager:
         state = self.device_states.get(dev_id, {})
         climate_data = extract_tuya_climate_data(dps, dev_type=state.get("type", "climate"))
 
+        # Motion detector (state + battery only) and multi-line switches (one entry per line)
+        motion = extract_motion_data(dps, state.get("category", ""))
+        if motion:
+            if motion["battery"] is not None:
+                climate_data["battery"] = motion["battery"]
+            climate_data["current_temperature"] = climate_data["humidity"] = None
+            state["type"] = "sensor"
+        state["motion"] = motion["motion"] if motion else None
+        state["battery_state"] = motion["battery_state"] if motion else None
+        state["is_motion_sensor"] = bool(motion)
+        channels = []
+        if state.get("type") in ("switch", "socket"):
+            channels = extract_switch_channels(dps, lambda i: str(i))
+        state["channels"] = channels
+
         state.update({
             "online": True,
             "is_on": is_on,
@@ -646,6 +711,17 @@ class TuyaManager:
         hum = first("humidity_value", "va_humidity", "humidity_current")
         bat = first("battery_percentage", "battery")
 
+        # Motion detector: pir / presence_state are "pir"|"presence" when triggered and "none" when clear
+        motion_val = next((codes[n] for n in ("pir", "presence_state") if isinstance(codes.get(n), str)), None)
+        if motion_val is not None:
+            state["type"] = "sensor"
+            state["motion"] = motion_val.lower() not in ("none", "clear", "off")
+            state["is_motion_sensor"] = True
+            state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
+            cur = hum = None
+        if state.get("type") in ("switch", "socket"):
+            state["channels"] = extract_switch_channels(codes, lambda i: f"switch_{i}")
+
         state.update({
             "online": True,
             "is_on": is_on,
@@ -673,30 +749,40 @@ class TuyaManager:
                 pass
         return list(self.device_states.values())
 
-    async def set_device_power(self, dev_id: str, is_on: bool) -> bool:
-        """Toggles power for a device."""
+    async def set_device_power(self, dev_id: str, is_on: bool, channel: int = 1) -> bool:
+        """Toggles power for a device (or one line of a multi-line switch)."""
         dev = self.local_devices.get(dev_id)
         if not dev:
             # Fallback to cloud if configured
-            return await self._set_cloud_power(dev_id, is_on)
+            success = await self._set_cloud_power(dev_id, is_on, channel)
+        else:
+            def _set_power():
+                try:
+                    # Only pass `switch` for lines beyond the first: BulbDevice defaults to switch=0 (auto-detect)
+                    kwargs = {"switch": channel} if channel > 1 else {}
+                    if is_on:
+                        dev.turn_on(**kwargs)
+                    else:
+                        dev.turn_off(**kwargs)
+                    return True
+                except Exception as e:
+                    logger.error(f"Error setting power for {dev_id} line {channel}: {e}")
+                    return False
 
-        def _set_power():
-            try:
-                if is_on:
-                    dev.turn_on()
-                else:
-                    dev.turn_off()
-                return True
-            except Exception as e:
-                logger.error(f"Error setting power for {dev_id}: {e}")
-                return False
-
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, _set_power)
-        if success:
-            if dev_id in self.device_states:
-                self.device_states[dev_id]["is_on"] = is_on
-                self.device_states[dev_id]["online"] = True
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, _set_power)
+        if success and dev_id in self.device_states:
+            st = self.device_states[dev_id]
+            channels = st.get("channels") or []
+            if channels:
+                for ch in channels:
+                    if ch["index"] == channel:
+                        ch["is_on"] = is_on
+                st["is_on"] = any(ch["is_on"] for ch in channels)
+            else:
+                st["is_on"] = is_on
+            if dev:
+                st["online"] = True
         return success
 
     async def test_connection(self, dev_id: str, ip: str, local_key: str, version: float = 3.3) -> Dict[str, Any]:
@@ -1033,9 +1119,97 @@ class TuyaManager:
             success = await self._set_cloud_feed(dev_id, portions)
 
         if success and dev_id in self.device_states:
-            import datetime
-            self.device_states[dev_id]["last_fed"] = datetime.datetime.now().strftime("%H:%M")
+            now = datetime.datetime.now()
+            self.device_states[dev_id]["last_fed"] = now.strftime("%H:%M")
+            self._feed_log.setdefault(dev_id, []).append((now.timestamp(), portions))
+            self._feeding_fetched_at.pop(dev_id, None)  # re-read the cloud log on the next poll
+            self._update_feeding_state(dev_id, self._today_records_from_log(dev_id))
         return success
+
+    # ----- Pet feeder: today's feeding records -----
+
+    @staticmethod
+    def _midnight_ts() -> float:
+        return datetime.datetime.now().replace(hour=0, minute=0, second=0, microsecond=0).timestamp()
+
+    def _today_records_from_log(self, dev_id: str) -> List[Dict[str, Any]]:
+        """Feeds triggered through HomeAuto today (used when the Tuya Cloud log is unavailable)."""
+        midnight = self._midnight_ts()
+        return [
+            {"time": datetime.datetime.fromtimestamp(ts).strftime("%H:%M"), "portions": p, "ts": ts}
+            for ts, p in self._feed_log.get(dev_id, []) if ts >= midnight
+        ]
+
+    def _update_feeding_state(self, dev_id: str, records: List[Dict[str, Any]], source: str = "homeauto"):
+        st = self.device_states.get(dev_id)
+        if st is None:
+            return
+        records = sorted(records, key=lambda r: r["ts"], reverse=True)
+        st["feeding_records"] = [{"time": r["time"], "portions": r["portions"]} for r in records]
+        st["feeding_total"] = sum(r["portions"] for r in records)
+        st["feeding_source"] = source
+        if records:
+            st["last_fed"] = records[0]["time"]
+
+    def _fetch_cloud_feeding_records(self, dev_id: str) -> Optional[List[Dict[str, Any]]]:
+        """Reads today's feeding events from the Tuya Cloud device log. Returns None when the log is unavailable."""
+        if not self.cloud_api:
+            return None
+        params = {"start_time": int(self._midnight_ts() * 1000), "end_time": int(time.time() * 1000),
+                  "type": "7", "size": 100, "query_type": 1}
+        logs = []
+        try:
+            for _ in range(5):  # at most 500 events
+                res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/logs", dict(params))
+                if not (res and res.get("success") and isinstance(res.get("result"), dict)):
+                    logger.debug(f"Cloud feeding log for {dev_id} failed: {res}")
+                    return None
+                result = res["result"]
+                logs += [l for l in result.get("logs") or [] if isinstance(l, dict)]
+                if not (result.get("has_next") and result.get("next_row_key")):
+                    break
+                params["start_row_key"] = result["next_row_key"]
+        except Exception as e:
+            logger.debug(f"Cloud feeding log error for {dev_id}: {e}")
+            return None
+
+        def portions_of(value):
+            try:
+                return max(1, int(float(value)))
+            except (TypeError, ValueError):
+                return 1
+
+        # One feed can be logged under several codes, so use the first code that has events today
+        for code in FEED_LOG_CODES:
+            entries = [l for l in logs if l.get("code") == code and l.get("event_time")]
+            if code == "feed_state":
+                entries = [l for l in entries if str(l.get("value")).lower() == "feeding"]
+            if entries:
+                records = []
+                for l in entries:
+                    ts = float(l["event_time"]) / 1000.0
+                    records.append({
+                        "time": datetime.datetime.fromtimestamp(ts).strftime("%H:%M"),
+                        "portions": 1 if code == "feed_state" else portions_of(l.get("value")),
+                        "ts": ts,
+                    })
+                return records
+        return []
+
+    def _refresh_feeding_records(self, dev_id: str):
+        """Runs in the poll worker: refreshes a pet feeder's records at most every FEEDING_REFRESH_SECONDS."""
+        st = self.device_states.get(dev_id)
+        if not st or st.get("type") != "pet_feeder":
+            return
+        now = time.time()
+        if now - self._feeding_fetched_at.get(dev_id, 0) < FEEDING_REFRESH_SECONDS:
+            return
+        self._feeding_fetched_at[dev_id] = now
+        records = self._fetch_cloud_feeding_records(dev_id)
+        if records is not None:
+            self._update_feeding_state(dev_id, records, "cloud")
+        else:
+            self._update_feeding_state(dev_id, self._today_records_from_log(dev_id), "homeauto")
 
     async def _set_cloud_feed(self, dev_id: str, portions: int = 1) -> bool:
         if not self.cloud_api:
@@ -1082,7 +1256,7 @@ class TuyaManager:
                 self.device_states[dev_id]["brightness"] = brightness
         return success
 
-    async def _set_cloud_power(self, dev_id: str, is_on: bool) -> bool:
+    async def _set_cloud_power(self, dev_id: str, is_on: bool, channel: int = 1) -> bool:
         if not self.cloud_api:
             return False
         

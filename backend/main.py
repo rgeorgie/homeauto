@@ -168,9 +168,10 @@ async def list_devices():
     return await tuya_mgr.get_all_states()
 
 @app.post("/api/devices/{device_id}/power")
-async def set_device_power(device_id: str, payload: Dict[str, bool] = Body(...)):
-    is_on = payload.get("is_on", True)
-    success = await tuya_mgr.set_device_power(device_id, is_on)
+async def set_device_power(device_id: str, payload: Dict[str, Any] = Body(...)):
+    is_on = bool(payload.get("is_on", True))
+    channel = int(payload.get("channel", 1))  # line number for multi-line switches
+    success = await tuya_mgr.set_device_power(device_id, is_on, channel)
     if not success:
         raise HTTPException(status_code=500, detail="Failed to communicate with Tuya device")
     await ws_manager.broadcast({

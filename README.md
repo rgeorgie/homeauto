@@ -164,8 +164,8 @@ The platform includes a dedicated [`kiosk.sh`](kiosk.sh:1) launcher compatible w
 
 3. **Or via systemd:**
    ```bash
-   sudo systemctl restart homeauto.service
-   sudo systemctl restart homeauto-kiosk.service
+   systemctl --user restart homeauto.service
+   systemctl --user restart homeauto-kiosk.service
    ```
 
 ---
