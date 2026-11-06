@@ -20,6 +20,11 @@ logger = logging.getLogger("HomeAuto.Tuya")
 
 # Min seconds between Tuya Cloud status queries per device (protects the cloud API quota)
 CLOUD_POLL_INTERVAL_SECONDS = 60
+# Air conditioners (Tuya category "kt"): option -> (local DP number, cloud code, allowed values)
+AC_OPTIONS = {
+    "mode": (4, "mode", ("cold", "hot", "wet", "wind", "auto")),
+    "fan_speed": (5, "windspeed", ("auto", "mute", "low", "mid_low", "mid", "mid_high", "high", "strong")),
+}
 # Pet feeder feeding-log refresh interval, and the Tuya log codes that record a dispense (in order of preference)
 FEEDING_REFRESH_SECONDS = 300
 FEED_LOG_CODES = ("feed_report", "manual_feed", "feed_state")
@@ -39,6 +44,7 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
 
     pet_cats = ["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"]
     climate_cats = ["wk", "wkf", "rs", "qn", "tc", "wkjsq"]
+    ac_cats = ["kt"]
     light_cats = ["dj", "dd", "dc", "xdd", "tyndj", "sbd", "tgq"]
     curtain_cats = ["cl", "clkg", "ckmkq"]
     sensor_cats = ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir", "hjjcy", "zd", "sgbj", "ldcg", "wnykq", "co2bj", "pm25", "jwbj"]
@@ -51,6 +57,8 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
         return "pet_feeder"
     if cat in climate_cats:
         return "climate"
+    if cat in ac_cats:
+        return "ac"
     if cat in light_cats:
         return "light"
     if cat in curtain_cats:
@@ -795,6 +803,9 @@ class TuyaManager:
         if state.get("type") not in ("sensor", "climate", "pet_feeder"):
             channels = extract_switch_channels(dps)
         state["channels"] = channels
+        if (state.get("category") or "").lower() == "kt" or state.get("type") == "ac":
+            fan = dps.get("5")
+            state["fan_speed"] = fan if isinstance(fan, str) else state.get("fan_speed")
 
         state.update({
             "online": True,
@@ -848,6 +859,13 @@ class TuyaManager:
                     state["cloud_error"] = f"Tuya Cloud: {reason}" + (f" (code {bad['code']})" if bad and bad.get("code") else "")
                     return None
                 codes = {i["code"]: i.get("value") for i in plist if isinstance(i, dict) and i.get("code") and i.get("value") is not None}
+            # Air conditioners report the fan speed (windspeed) only through the thing-model properties
+            if (state.get("category") or "").lower() == "kt" and "windspeed" not in codes:
+                props = self.cloud_api.get(f"/v2.0/cloud/thing/{dev_id}/shadow/properties")
+                plist = ((props or {}).get("result") or {}).get("properties") if props and props.get("success") else None
+                for p in plist or []:
+                    if isinstance(p, dict) and p.get("code") == "windspeed" and p.get("value") is not None:
+                        codes["windspeed"] = p["value"]
         except Exception as e:
             logger.debug(f"Cloud status error for {dev_id}: {e}")
             state["cloud_error"] = f"Tuya Cloud: {e}"
@@ -906,6 +924,12 @@ class TuyaManager:
             cur = hum = None
         if state.get("type") not in ("sensor", "climate", "pet_feeder", "camera"):
             state["channels"] = extract_switch_channels(codes, cloud=True)
+        if (state.get("category") or "").lower() == "kt" or state.get("type") == "ac":
+            # Air conditioner: working mode and fan speed (the current/target temperature are handled above)
+            if isinstance(codes.get("mode"), str):
+                state["mode"] = codes["mode"]
+            if isinstance(codes.get("windspeed"), str):
+                state["fan_speed"] = codes["windspeed"]
 
         state.update({
             "online": True,
@@ -1263,6 +1287,47 @@ class TuyaManager:
 
         return success
 
+    async def set_ac_option(self, dev_id: str, option: str, value: str) -> bool:
+        """Sets an air conditioner's working mode or fan speed."""
+        spec = AC_OPTIONS.get(option)
+        if not spec or value not in spec[2]:
+            return False
+        dp, code, _ = spec
+        dev = self.local_devices.get(dev_id)
+
+        def _send_local():
+            try:
+                res = dev.set_value(dp, value)
+                return not (isinstance(res, dict) and "Error" in res)
+            except Exception as e:
+                logger.error(f"Error setting AC {option} for {dev_id}: {e}")
+                return False
+
+        def _send_cloud():
+            try:
+                res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": [{"code": code, "value": value}]})
+                return bool(res and res.get("success"))
+            except Exception as e:
+                logger.error(f"Error sending cloud AC {option} command to {dev_id}: {e}")
+                return False
+
+        loop = asyncio.get_event_loop()
+        success = False
+        if dev:
+            success = await loop.run_in_executor(None, _send_local)
+        if not success and self.cloud_api:
+            success = await loop.run_in_executor(None, _send_cloud)
+
+        if success and dev_id in self.device_states:
+            st = self.device_states[dev_id]
+            st["mode" if option == "mode" else "fan_speed"] = value
+            st["online"] = True
+            if isinstance(st.get("cloud_codes"), dict):
+                st["cloud_codes"][code] = value
+            if isinstance(st.get("dps"), dict) and dev:
+                st["dps"][str(dp)] = value
+        return success
+
     async def feed_pet(self, dev_id: str, portions: int = 1) -> bool:
         """Dispenses food for a smart pet feeder."""
         dev = self.local_devices.get(dev_id)
@@ -1450,7 +1515,11 @@ class TuyaManager:
         def _send():
             try:
                 # DP 1-6 are switch_1..6; the USB block of a power strip is DP 7+ (switch_usb1..)
-                code = f"switch_{channel}" if channel <= 6 else f"switch_usb{channel - 6}"
+                st = self.device_states.get(dev_id) or {}
+                if (st.get("category") or "").lower() == "kt" or st.get("type") == "ac":
+                    code = "switch"  # air conditioners use a single `switch` code
+                else:
+                    code = f"switch_{channel}" if channel <= 6 else f"switch_usb{channel - 6}"
                 commands = [{"code": code, "value": is_on}]
                 res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
                 return bool(res and res.get("success"))

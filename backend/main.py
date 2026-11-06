@@ -209,6 +209,19 @@ async def set_device_temperature(device_id: str, payload: Dict[str, float] = Bod
     })
     return {"status": "ok", "device_id": device_id, "target_temperature": temperature}
 
+@app.post("/api/devices/{device_id}/ac")
+async def set_device_ac_option(device_id: str, payload: Dict[str, str] = Body(...)):
+    option = payload.get("option", "")
+    value = payload.get("value", "")
+    success = await tuya_mgr.set_ac_option(device_id, option, value)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to set air conditioner option")
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "devices": await tuya_mgr.get_all_states() }
+    })
+    return {"status": "ok", "device_id": device_id, option: value}
+
 @app.post("/api/devices/{device_id}/feed")
 async def feed_pet_endpoint(device_id: str, payload: Dict[str, int] = Body(default={"portions": 1})):
     portions = payload.get("portions", 1)

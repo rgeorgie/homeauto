@@ -333,6 +333,11 @@ function renderTuyaDevices(allDevices) {
       btn.onclick = () => stepDeviceTemperature(dev.id, +0.5);
     });
 
+    // Air conditioner mode / fan speed
+    document.querySelectorAll(`.ac-option-btn[data-id="${dev.id}"]`).forEach(btn => {
+      btn.onclick = () => setAcOption(dev.id, btn.dataset.option, btn.dataset.value);
+    });
+
     // Pet Feeder Feed Button
     const btnFeed = document.querySelectorAll(`.btn-feed-pet[data-id="${dev.id}"]`);
     btnFeed.forEach(btn => {
@@ -351,10 +356,12 @@ function deviceKind(dev) {
   const t = dev.type;
   if (t === "bulb") return "light";
   if (t === "pet") return "pet_feeder";
-  if (["sensor", "climate", "pet_feeder", "light", "camera"].includes(t)) return t;
+  if (["sensor", "climate", "ac", "pet_feeder", "light", "camera"].includes(t)) return t;
   if (t && t !== "switch") return t; // socket, curtain, fan...
   if (dev.contact_open === true || dev.contact_open === false) return "sensor";
   const cat = dev.category;
+  if (cat === "kt") return "ac";
+
   if (["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(cat)) return "pet_feeder";
   if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj"].includes(cat)) return "sensor";
   if (["wk", "wkf", "rs", "qn", "tc", "wkjsq"].includes(cat)) return "climate";
@@ -524,6 +531,64 @@ function createDeviceCardHtml(dev) {
     `;
   }
 
+  // --- 1b. AIR CONDITIONER CARD (power, mode, fan speed, setpoint 16-31°C) ---
+  if (kind === "ac") {
+    const hasCurrent = dev.current_temperature !== undefined && dev.current_temperature !== null;
+    const currentTempDisplay = hasCurrent ? `${parseFloat(dev.current_temperature).toFixed(1)}°C` : `<span style="opacity: 0.5; font-size: 26px;">--.-°C</span>`;
+    const hasTarget = dev.target_temperature !== undefined && dev.target_temperature !== null;
+    const targetTempDisplay = hasTarget ? `${parseFloat(dev.target_temperature).toFixed(1)}°C` : `24.0°C`;
+    const targetSliderVal = hasTarget ? parseFloat(dev.target_temperature).toFixed(1) : "24.0";
+    const optionButtons = (option, current, choices) => choices.map(([value, label]) => `
+      <button class="action-btn ac-option-btn" data-id="${dev.id}" data-option="${option}" data-value="${value}"
+        style="padding: 8px 12px; font-size: 13px; ${current === value ? "" : "background: rgba(255,255,255,0.08);"}">${label}</button>`).join("");
+    const modes = [["cold", "❄️ Cool"], ["hot", "🔥 Heat"], ["wet", "💧 Dry"], ["wind", "🌀 Fan"], ["auto", "♻️ Auto"]];
+    const fanSpeeds = [["auto", "Auto"], ["mute", "Mute"], ["low", "Low"], ["mid_low", "Mid-low"], ["mid", "Mid"], ["mid_high", "Mid-high"], ["high", "High"], ["strong", "Turbo"]];
+
+    return `
+      <div class="card" id="card-${dev.id}" style="border-color: rgba(59, 130, 246, 0.35);">
+        <div>
+          <div class="card-header">
+            <div>
+              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
+            </div>
+            <div class="card-icon" style="background: rgba(59, 130, 246, 0.15);">❄️</div>
+          </div>
+
+          <div class="climate-current-temp">
+            <div>
+              <div style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.5px;">Room Temp</div>
+              <div class="climate-temp-big" style="color: #60a5fa;">${currentTempDisplay}</div>
+            </div>
+            <button class="device-toggle-btn ${dev.is_on ? 'is-on' : ''}" data-id="${dev.id}" style="width: auto; padding: 10px 18px; font-size: 14px;">
+              ${dev.is_on ? '⚡ ON' : '○ OFF'}
+            </button>
+          </div>
+
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 14px;">Mode</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">${optionButtons("mode", dev.mode, modes)}</div>
+
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 14px;">Fan speed</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;">${optionButtons("fan_speed", dev.fan_speed, fanSpeeds)}</div>
+
+          <div style="margin-top: 14px;">
+            <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 4px;">Set temperature:</div>
+            <div class="temp-stepper">
+              <button class="temp-btn temp-step-minus" data-id="${dev.id}">−</button>
+              <div class="temp-target-display">
+                <div class="temp-target-val" data-id="${dev.id}">${targetTempDisplay}</div>
+              </div>
+              <button class="temp-btn temp-step-plus" data-id="${dev.id}">+</button>
+            </div>
+            <div class="slider-container" style="margin-top: 10px;">
+              <input type="range" min="16" max="31" step="0.5" value="${targetSliderVal}" class="touch-slider device-temp-slider" data-id="${dev.id}" style="accent-color: #60a5fa;">
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   // --- 2. PET FEEDER / PET WATERER CARD ---
   if (isPetFeeder) {
     const lastFed = dev.last_fed || "Today";
@@ -663,10 +728,32 @@ async function setDeviceTemperature(deviceId, targetTemp) {
   }
 }
 
+async function setAcOption(deviceId, option, value) {
+  try {
+    const res = await fetch(`/api/devices/${deviceId}/ac`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ option, value })
+    });
+    if (res.ok) {
+      const dev = state.devices.find(d => d.id === deviceId);
+      if (dev) {
+        dev[option === "mode" ? "mode" : "fan_speed"] = value;
+        renderTuyaDevices(state.devices);
+      }
+    } else {
+      showToast("Air conditioner command failed", 2000);
+    }
+  } catch (e) {
+    showToast("Network error communicating with device");
+  }
+}
+
 function stepDeviceTemperature(deviceId, stepDelta) {
   const dev = state.devices.find(d => d.id === deviceId);
   const currentTarget = (dev && dev.target_temperature !== undefined && dev.target_temperature !== null) ? dev.target_temperature : 21.0;
-  const newTarget = Math.max(5.0, Math.min(35.0, currentTarget + stepDelta));
+  const [minT, maxT] = dev && deviceKind(dev) === "ac" ? [16.0, 31.0] : [5.0, 35.0];
+  const newTarget = Math.max(minT, Math.min(maxT, currentTarget + stepDelta));
   setDeviceTemperature(deviceId, newTarget);
 }
 
