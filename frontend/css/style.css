@@ -434,6 +434,46 @@ body {
   opacity: 1;
 }
 
+/* Live fireplace */
+.screensaver-fireplace {
+  position: absolute;
+  inset: 0;
+  display: none;
+  background: radial-gradient(ellipse at 50% 100%, #2a0d04 0%, #0a0302 60%, #000 100%);
+}
+
+#screensaver-overlay.fireplace .screensaver-fireplace { display: block; }
+#screensaver-overlay.fireplace .screensaver-bg { display: none; }
+
+.screensaver-fireplace canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.fire-logs {
+  position: absolute;
+  bottom: 4%;
+  left: 50%;
+  width: 36%;
+  height: 12%;
+  transform: translateX(-50%);
+}
+
+.fire-log {
+  position: absolute;
+  bottom: 0;
+  width: 78%;
+  height: 46%;
+  border-radius: 40px;
+  background: linear-gradient(180deg, #4a2a14 0%, #1d0e06 55%, #0a0402 100%);
+  box-shadow: 0 -4px 30px rgba(255, 90, 10, 0.55);
+}
+
+.fire-log:nth-child(1) { left: 0; transform: rotate(-4deg); }
+.fire-log:nth-child(2) { right: 0; bottom: 14%; transform: rotate(5deg); }
+
 .screensaver-scrim {
   position: absolute;
   inset: 0;

@@ -303,6 +303,7 @@ function populateAdminFields(cfg) {
   // Screensaver
   if (cfg.screensaver) {
     document.getElementById("ss-enabled").checked = Boolean(cfg.screensaver.enabled);
+    document.getElementById("ss-mode").value = cfg.screensaver.mode || "photos";
     document.getElementById("ss-idle").value = cfg.screensaver.idle_timeout_seconds || 120;
     document.getElementById("ss-transition").value = cfg.screensaver.photo_transition_seconds || 15;
     document.getElementById("ss-photo-dir").value = cfg.screensaver.photo_directory || "./frontend/assets/photos";
@@ -487,6 +488,7 @@ async function saveFullConfig() {
     },
     screensaver: {
       enabled: document.getElementById("ss-enabled").checked,
+      mode: document.getElementById("ss-mode").value,
       idle_timeout_seconds: parseInt(document.getElementById("ss-idle").value || "120"),
       photo_transition_seconds: parseInt(document.getElementById("ss-transition").value || "15"),
       photo_directory: document.getElementById("ss-photo-dir").value.trim() || "./frontend/assets/photos",

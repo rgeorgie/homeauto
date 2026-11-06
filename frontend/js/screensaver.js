@@ -56,10 +56,16 @@ function startScreensaver() {
   isScreensaverActive = true;
   overlay.classList.add("active");
 
-  // Start photo carousel
-  showNextPhoto();
   clearInterval(photoCarouselInterval);
-  photoCarouselInterval = setInterval(showNextPhoto, 15000);
+  if (state.screensaver?.mode === "fireplace") {
+    overlay.classList.add("fireplace");
+    startFireplace();
+  } else {
+    overlay.classList.remove("fireplace");
+    // Start photo carousel
+    showNextPhoto();
+    photoCarouselInterval = setInterval(showNextPhoto, 15000);
+  }
 
   // If YouTube auto-play configured, trigger preset
   if (state.screensaver?.youtube_audio?.auto_play_on_screensaver && !state.media.is_playing) {
@@ -74,7 +80,87 @@ function stopScreensaver() {
   isScreensaverActive = false;
   overlay.classList.remove("active");
   clearInterval(photoCarouselInterval);
+  stopFireplace();
   resetIdleTimer();
+}
+
+// Live fireplace: a low-resolution heat buffer (the classic "fire" cellular effect),
+// painted to a small canvas that CSS scales up. Cheap enough for a Raspberry Pi.
+const FIRE_W = 192;
+const FIRE_H = 108;
+let fireTimer = null;
+let fireHeat = null;
+let fireImage = null;
+let firePalette = null;
+
+function buildFirePalette() {
+  const pal = new Uint8ClampedArray(256 * 4);
+  for (let h = 0; h < 256; h++) {
+    pal[h * 4] = h * 3;                    // red rises first
+    pal[h * 4 + 1] = (h - 70) * 2.2;       // then orange/yellow
+    pal[h * 4 + 2] = (h - 200) * 4;        // only the hottest core turns white
+    pal[h * 4 + 3] = h * 2.6;              // cool cells fade to transparent
+  }
+  return pal;
+}
+
+function startFireplace() {
+  const canvas = document.getElementById("screensaver-fire-canvas");
+  if (!canvas) return;
+  canvas.width = FIRE_W;
+  canvas.height = FIRE_H;
+  const ctx = canvas.getContext("2d");
+  fireHeat = new Uint8Array(FIRE_W * FIRE_H);
+  fireImage = ctx.createImageData(FIRE_W, FIRE_H);
+  firePalette = firePalette || buildFirePalette();
+
+  clearInterval(fireTimer);
+  fireTimer = setInterval(() => {
+    stepFire(performance.now() / 1000);
+    ctx.putImageData(fireImage, 0, 0);
+  }, 40); // ~25 fps
+}
+
+function stopFireplace() {
+  clearInterval(fireTimer);
+  fireTimer = null;
+}
+
+function stepFire(t) {
+  const w = FIRE_W, h = FIRE_H;
+  const heat = fireHeat;
+
+  // Fuel row: a bright centre tapering to the edges, flickering and slowly swaying
+  const centre = w / 2 + Math.sin(t * 0.7) * 4;
+  const half = w * 0.17;
+  const base = (h - 1) * w;
+  for (let x = 0; x < w; x++) {
+    const d = Math.abs(x - centre) / half;
+    heat[base + x] = d >= 1 ? 0 : Math.min(255, 255 * (1 - d * d) * (0.75 + Math.random() * 0.25));
+  }
+
+  // Propagate upwards with random cooling and sideways drift (wind follows the sway)
+  const wind = Math.sin(t * 0.9) * 0.6;
+  for (let y = 1; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const src = heat[y * w + x];
+      let dx = ((Math.random() * 3) | 0) - 1 + (Math.random() < Math.abs(wind) ? Math.sign(wind) : 0);
+      let dst = x + dx;
+      if (dst < 0) dst = 0; else if (dst >= w) dst = w - 1;
+      const v = src - ((Math.random() * 9) | 0);
+      heat[(y - 1) * w + dst] = v > 0 ? v : 0;
+    }
+  }
+
+  const px = fireImage.data;
+  for (let i = 0, n = w * h; i < n; i++) {
+    const p = heat[i] * 4;
+    const o = i * 4;
+    px[o] = firePalette[p];
+    px[o + 1] = firePalette[p + 1];
+    px[o + 2] = firePalette[p + 2];
+    px[o + 3] = firePalette[p + 3];
+  }
 }
 
 function showNextPhoto() {

@@ -45,6 +45,7 @@ class ScreensaverManager:
     def get_settings(self) -> Dict[str, Any]:
         return {
             "enabled": self.config.enabled,
+            "mode": self.config.mode,
             "idle_timeout_seconds": self.config.idle_timeout_seconds,
             "photo_transition_seconds": self.config.photo_transition_seconds,
             "widgets": self.config.widgets.model_dump(),

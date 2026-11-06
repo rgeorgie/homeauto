@@ -74,6 +74,7 @@ kodi:
 # Screensaver & Ambient Display
 screensaver:
   enabled: true
+  mode: "photos" # "photos" = photo slideshow, "fireplace" = live animated fireplace
   idle_timeout_seconds: 120 # Start screensaver after 2 mins idle
   photo_transition_seconds: 15
   photo_directory: "./frontend/assets/photos"

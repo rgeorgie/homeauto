@@ -571,6 +571,14 @@
             </div>
 
             <div class="form-group">
+              <label class="form-label">Screensaver Style</label>
+              <select id="ss-mode" class="form-input">
+                <option value="photos">Photo slideshow</option>
+                <option value="fireplace">Live fireplace</option>
+              </select>
+            </div>
+
+            <div class="form-group">
               <label class="form-label">Idle Inactivity Timeout (seconds)</label>
               <input type="number" id="ss-idle" class="form-input" value="120" min="10" max="3600">
               <div class="form-hint">Time of touch inactivity before screensaver triggers</div>
@@ -902,6 +910,10 @@
   <!-- Fullscreen Ambient Screensaver Overlay -->
   <div id="screensaver-overlay">
     <div id="screensaver-bg" class="screensaver-bg"></div>
+    <div id="screensaver-fireplace" class="screensaver-fireplace">
+      <canvas id="screensaver-fire-canvas"></canvas>
+      <div class="fire-logs"><div class="fire-log"></div><div class="fire-log"></div></div>
+    </div>
     <div class="screensaver-scrim"></div>
 
     <!-- Top Overlay: Clock & Weather -->
