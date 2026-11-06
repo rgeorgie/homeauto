@@ -329,7 +329,7 @@ def extract_motion_data(dps: Dict[str, Any], category: str = "") -> Optional[Dic
     }
 
 
-def extract_switch_channels(values: Dict[str, Any], cloud: bool = False) -> List[Dict[str, Any]]:
+def extract_switch_channels(values: Dict[str, Any], cloud: bool = False, dp_map: Optional[Dict[int, int]] = None) -> List[Dict[str, Any]]:
     """
     Returns [{index, is_on, label}] for every boolean on/off output of a multi-line device (power strip, 2-3 gang switch),
     or [] when there are fewer than 2. `index` is the Tuya DP number. Local DPS use keys '1'..'8';
@@ -337,6 +337,13 @@ def extract_switch_channels(values: Dict[str, Any], cloud: bool = False) -> List
     The lines need not be consecutive (strips often put the USB block on DP 7).
     """
     channels = []
+    if dp_map and not cloud:
+        # Some panels keep their lines on unusual DPs (e.g. switch_1 = DP 16); dp_map is {line index: DP number}
+        for i, dp in sorted(dp_map.items()):
+            val = values.get(str(dp))
+            if isinstance(val, bool):
+                channels.append({"index": i, "is_on": val, "label": f"USB {i - 6}" if i > 6 else f"Line {i}"})
+        return channels if len(channels) >= 2 else []
     for i in range(1, MAX_SWITCH_CHANNELS + 1):
         val = values.get(f"switch_{i}" if cloud else str(i))
         if isinstance(val, bool):
@@ -762,6 +769,26 @@ class TuyaManager:
                 st["error"] = f"{local_error}; {st['cloud_error']}"
         return self.device_states.get(dev_id, {})
 
+    def _learn_switch_dps(self, dev_id: str):
+        """Once per device: asks the Tuya Cloud which DP number carries each switch_N / switch_usbN code."""
+        state = self.device_states.get(dev_id)
+        if state is None or state.get("_switch_dps_tried") or not self.cloud_api:
+            return
+        state["_switch_dps_tried"] = True
+        try:
+            res = self.cloud_api.get(f"/v2.0/cloud/thing/{dev_id}/shadow/properties")
+            props = ((res or {}).get("result") or {}).get("properties") if res and res.get("success") else None
+            dp_map = {}
+            for p in props or []:
+                m = re.fullmatch(r"switch_(usb)?(\d)", str(p.get("code", "")))
+                if m and p.get("type") == "bool" and isinstance(p.get("dp_id"), int):
+                    dp_map[(6 if m.group(1) else 0) + int(m.group(2))] = p["dp_id"]
+            if dp_map:
+                state["switch_dps"] = dp_map
+                logger.info(f"Switch lines of '{state.get('name')}' (line: DP): {dp_map}")
+        except Exception as e:
+            logger.debug(f"Could not read the switch DPs of {dev_id}: {e}")
+
     def _apply_dps(self, dev_id: str, dps: Dict[str, Any], source: str) -> Dict[str, Any]:
         is_on = False
         # Standard Tuya switch/light DPS is usually '1' or '20'
@@ -778,6 +805,12 @@ class TuyaManager:
 
         # Thermostat / Heating / Climate DPS extraction
         state = self.device_states.get(dev_id, {})
+        if source == "local":
+            self._learn_switch_dps(dev_id)
+        dp_map = state.get("switch_dps") or {}
+        switch_vals = [dps.get(str(dp)) for dp in dp_map.values() if isinstance(dps.get(str(dp)), bool)]
+        if switch_vals:
+            is_on = any(switch_vals)
         climate_data = extract_tuya_climate_data(dps, dev_type=state.get("type", "climate"))
 
         # Motion detector (state + battery only) and multi-line switches (one entry per line)
@@ -801,7 +834,7 @@ class TuyaManager:
             climate_data["current_temperature"] = climate_data["humidity"] = None
         channels = []
         if state.get("type") not in ("sensor", "climate", "pet_feeder"):
-            channels = extract_switch_channels(dps)
+            channels = extract_switch_channels(dps, dp_map=dp_map)
         state["channels"] = channels
         if (state.get("category") or "").lower() == "kt" or state.get("type") == "ac":
             fan = dps.get("5")
@@ -970,7 +1003,9 @@ class TuyaManager:
                 try:
                     # Single-line devices: no `switch` argument (BulbDevice auto-detects its DP). Multi-line devices: always name the line
                     multi = bool((self.device_states.get(dev_id) or {}).get("channels"))
-                    kwargs = {"switch": channel} if channel > 1 or multi else {}
+                    dp_map = (self.device_states.get(dev_id) or {}).get("switch_dps") or {}
+                    line_dp = dp_map.get(channel, channel)
+                    kwargs = {"switch": line_dp} if line_dp > 1 or multi else {}
                     if is_on:
                         dev.turn_on(**kwargs)
                     else:
