@@ -21,6 +21,7 @@ from backend.system_manager import SystemManager
 from backend import pi_control
 from backend import camera_stream
 from backend.camera_events import CameraEventLog
+from backend.push_history import PushHistory
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HomeAuto.Server")
@@ -314,6 +315,21 @@ async def _broadcast_camera_event(event: Dict[str, Any]):
 
 camera_log = CameraEventLog(_shared_snapshot, _describe_camera, _broadcast_camera_event)
 tuya_mgr.on_camera_event = lambda dev_id, kind, label: asyncio.ensure_future(camera_log.capture(dev_id, kind, label))
+
+async def _broadcast_push_event(entry: Dict[str, Any]):
+    await ws_manager.broadcast({"type": "push_event", "data": entry})
+
+push_log = PushHistory(lambda dev_id: (tuya_mgr.device_states.get(dev_id) or {}).get("name") or dev_id, _broadcast_push_event)
+tuya_mgr.on_push = lambda dev_id, biz, codes: asyncio.ensure_future(push_log.record(dev_id, biz, codes))
+
+@app.get("/api/push-history")
+async def list_push_history():
+    return push_log.list()
+
+@app.delete("/api/push-history")
+async def clear_push_history():
+    await asyncio.get_event_loop().run_in_executor(None, push_log.clear)
+    return {"status": "ok"}
 
 @app.get("/api/camera-events")
 async def list_camera_events():

@@ -111,6 +111,14 @@
         </div>
       </div>
 
+      <div id="push-history-panel" style="margin-bottom: 24px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <button id="btn-toggle-push-history" style="background: none; border: none; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer; padding: 0;">📨 Push history <span id="push-history-count" style="font-weight: 400; color: var(--text-muted); font-size: 13px;"></span> <span id="push-history-arrow" style="font-size: 12px;">▸</span></button>
+          <button class="action-btn" id="btn-clear-push-history" style="display: none; padding: 6px 12px; font-size: 12px; background: rgba(255,255,255,0.08);">Clear</button>
+        </div>
+        <div id="push-history-list" style="display: none; margin-top: 10px; max-height: 280px; overflow-y: auto; font-size: 13px;"></div>
+      </div>
+
       <div id="camera-events-panel" style="display: none; margin-bottom: 24px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
           <h3 style="font-size: 16px; font-weight: 700;">🔔 Doorbell &amp; camera history</h3>
@@ -1008,6 +1016,7 @@
   <script src="/js/app.js"></script>
   <script src="/js/tuya_cards.js"></script>
   <script src="/js/camera.js"></script>
+  <script src="/js/push_history.js"></script>
   <script src="/js/screensaver.js"></script>
   <script src="/js/kodi.js"></script>
   <script src="/js/bt_audio.js"></script>

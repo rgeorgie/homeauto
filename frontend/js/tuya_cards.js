@@ -366,13 +366,26 @@ function deviceKind(dev) {
   if (cat === "kt") return "ac";
 
   if (["cwf", "cwyq", "cwwsq", "cwsb", "pet", "cw", "cww"].includes(cat)) return "pet_feeder";
-  if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj"].includes(cat)) return "sensor";
+  if (["wsdcg", "cg", "th01", "thp", "hjjcy", "mcs", "pir", "ywbj", "rqbj", "sj", "sos"].includes(cat)) return "sensor";
   if (["wk", "wkf", "rs", "qn", "tc", "wkjsq"].includes(cat)) return "climate";
   if (cat === "sp") return "camera";
   const words = (dev.name || "").toLowerCase().match(/[a-z0-9]+/g) || [];
   if (words.some(w => ["thermostat", "heater", "trv", "radiator", "boiler"].includes(w))) return "climate";
   if (words.some(w => ["feeder", "fountain", "waterer"].includes(w))) return "pet_feeder";
   return "switch";
+}
+
+// Battery chip for a card title: the percentage when the device reports one, otherwise its low / medium / high state
+function batteryChip(dev) {
+  const pct = dev.battery;
+  let text = null, level = null;
+  if (pct !== undefined && pct !== null && !isNaN(pct)) { text = `${Math.round(pct)}%`; level = pct; }
+  else if (dev.battery_state) { text = escapeHtml(dev.battery_state); level = { Low: 10, Medium: 50, High: 90 }[dev.battery_state]; }
+  if (text === null) return "";
+  const [bg, fg] = level === undefined || level === null || level > 30
+    ? ["rgba(34, 197, 94, 0.2)", "#4ade80"]
+    : level > 15 ? ["rgba(245, 158, 11, 0.2)", "#fbbf24"] : ["rgba(239, 68, 68, 0.2)", "#f87171"];
+  return `<span title="Battery" style="background: ${bg}; color: ${fg}; font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px; white-space: nowrap;">🔋 ${text}</span>`;
 }
 
 function createDeviceCardHtml(dev) {
@@ -490,14 +503,13 @@ function createDeviceCardHtml(dev) {
     const targetSliderVal = hasTarget ? parseFloat(dev.target_temperature).toFixed(1) : "21.0";
 
     const humidityBadge = (dev.humidity !== undefined && dev.humidity !== null) ? `<span style="background: rgba(59, 130, 246, 0.2); color: #60a5fa; font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px;">💧 ${dev.humidity}%</span>` : '';
-    const batteryBadge = (dev.battery !== undefined && dev.battery !== null) ? `<span style="background: rgba(34, 197, 94, 0.2); color: #4ade80; font-size: 11px; padding: 2px 8px; border-radius: 6px; margin-left: 6px;">🔋 ${dev.battery}%</span>` : '';
 
     return `
       <div class="card" id="card-${dev.id}" style="border-color: rgba(251, 146, 60, 0.3);">
         <div>
           <div class="card-header">
             <div>
-              <div class="card-title">${escapeHtml(dev.name)} ${humidityBadge} ${batteryBadge}</div>
+              <div class="card-title">${escapeHtml(dev.name)} ${humidityBadge}${batteryChip(dev)}</div>
               <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(251, 146, 60, 0.15);">🔥</div>
@@ -558,7 +570,7 @@ function createDeviceCardHtml(dev) {
         <div>
           <div class="card-header">
             <div>
-              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-title">${escapeHtml(dev.name)}${batteryChip(dev)}</div>
               <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(59, 130, 246, 0.15);">❄️</div>
@@ -611,7 +623,7 @@ function createDeviceCardHtml(dev) {
         <div>
           <div class="card-header">
             <div>
-              <div class="card-title">${escapeHtml(dev.name)}</div>
+              <div class="card-title">${escapeHtml(dev.name)}${batteryChip(dev)}</div>
               <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
             </div>
             <div class="card-icon" style="background: rgba(168, 85, 247, 0.15);">🐾</div>
@@ -650,7 +662,7 @@ function createDeviceCardHtml(dev) {
       <div>
         <div class="card-header">
           <div>
-            <div class="card-title">${escapeHtml(dev.name)}</div>
+            <div class="card-title">${escapeHtml(dev.name)}${batteryChip(dev)}</div>
             <div class="card-subtitle">${deviceLocation(dev)} &bull; ${statusBadge}</div>
           </div>
           <div class="card-icon">${icon}</div>

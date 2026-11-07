@@ -48,7 +48,7 @@ def resolve_tuya_device_type(category: str = "", product_name: str = "", name: s
     ac_cats = ["kt"]
     light_cats = ["dj", "dd", "dc", "xdd", "tyndj", "sbd", "tgq"]
     curtain_cats = ["cl", "clkg", "ckmkq"]
-    sensor_cats = ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir", "hjjcy", "zd", "sgbj", "ldcg", "wnykq", "co2bj", "pm25", "jwbj"]
+    sensor_cats = ["cg", "wsdcg", "mcs", "ywbj", "rqbj", "sj", "pir", "hjjcy", "zd", "sgbj", "ldcg", "wnykq", "co2bj", "pm25", "jwbj", "sos"]
     socket_cats = ["cz", "pc"]
     fan_cats = ["fs", "fsd", "jsq"]
     camera_cats = ["sp"]
@@ -404,6 +404,7 @@ class TuyaManager:
         self._loop: Optional[asyncio.AbstractEventLoop] = None
         self._camera_specs: Dict[str, Dict[str, Any]] = {}  # dev id -> Tuya specification (what the camera accepts)
         self.on_camera_event: Optional[Callable[[str, str, str], None]] = None  # (device id, "ring" | "alert", label), called on the event loop
+        self.on_push: Optional[Callable[[str, Optional[str], Dict[str, Any]], None]] = None  # (device id, bizCode, changed codes), called on the event loop
         self._init_cloud()
         self._init_local_devices()
 
@@ -533,12 +534,14 @@ class TuyaManager:
         if biz in ("online", "offline"):
             state["online"] = biz == "online"
             state["error"] = None if biz == "online" else "Offline in Tuya Cloud (device not connected)"
+            self._push(dev_id, biz, {})
             return
 
         status = msg.get("status")
         if not isinstance(status, list):
             return
         new_codes = {i["code"]: i.get("value") for i in status if isinstance(i, dict) and i.get("code")}
+        self._push(dev_id, None, new_codes)
         events = self._note_camera_events(state, new_codes)
         if events and self.on_camera_event and self._loop:
             for kind, label in events:
@@ -548,6 +551,11 @@ class TuyaManager:
         if state.get("source") != "cloud" or not state.get("cloud_codes"):
             return
         self._apply_cloud_codes(state, {**state["cloud_codes"], **new_codes})
+
+    def _push(self, dev_id: str, biz: Optional[str], codes: Dict[str, Any]):
+        """Hands a pushed message to the push history (from the message-service thread to the event loop)."""
+        if self.on_push and self._loop:
+            self._loop.call_soon_threadsafe(self.on_push, dev_id, biz, dict(codes))
 
     @staticmethod
     def _note_camera_events(state: Dict[str, Any], codes: Dict[str, Any]) -> List[Tuple[str, str]]:
@@ -953,7 +961,10 @@ class TuyaManager:
         cur = temp(first("temp_current", "va_temperature", "temp_indoor"))
         tgt = temp(first("temp_set", "set_temp", "target_temp"))
         hum = first("humidity_value", "va_humidity", "humidity_current")
-        bat = first("battery_percentage", "battery", "wireless_electricity")
+        bat = next((codes[n] for n in ("battery_percentage", "battery", "wireless_electricity", "va_battery", "residual_electricity", "battery_value")
+                    if isinstance(codes.get(n), (int, float)) and not isinstance(codes.get(n), bool)), None)
+        if isinstance(codes.get("battery_state"), str):  # devices that only say low / medium / high
+            state["battery_state"] = BATTERY_STATE_LABELS.get(codes["battery_state"].lower())
 
         # Camera / video doorbell: battery, SD card (no controls)
         camera = extract_camera_data(codes)
