@@ -167,6 +167,7 @@ function applyStateUpdate(data) {
   if (data.devices) {
     state.devices = data.devices;
     renderTuyaDevices(state.devices);
+    if (typeof checkDoorbellRings === "function") checkDoorbellRings(state.devices);
     updateAmbientDeviceSummary(state.devices);
   }
   if (data.bluetooth) {

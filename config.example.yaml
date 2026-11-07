@@ -51,6 +51,15 @@ tuya:
       category: "dj"
       room: "Living Room"
 
+    # Camera / video doorbell (category "sp"). Live view and snapshots use the Tuya Cloud stream by default
+    # (needs the "IoT Video Live Stream" API on iot.tuya.com). For cameras with ONVIF/RTSP enabled in the
+    # Smart Life app, add a local stream instead, which needs no cloud:
+    #- id: "bf5544332211aabbcc"
+    #  name: "Front Door"
+    #  type: "camera"
+    #  category: "sp"
+    #  stream_url: "rtsp://user:password@192.168.0.120:554/stream1"
+
 # Bluetooth Surround Sound Management
 bluetooth_audio:
   enabled: true

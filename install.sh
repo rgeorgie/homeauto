@@ -21,6 +21,7 @@ sudo apt-get install -y \
   python3-dev \
   kodi \
   mpv \
+  ffmpeg \
   chromium-browser \
   bluez \
   libspa-0.2-bluetooth \

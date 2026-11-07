@@ -1,0 +1,137 @@
+// Camera / video doorbell viewer: a snapshot on demand (and when the doorbell rings), plus a live MJPEG view.
+// The backend runs a single ffmpeg for the live view; closing the fetch connection stops it.
+
+let cameraViewer = { devId: null, objectUrl: null, token: 0, abort: null };
+const ringSeen = {}; // device id -> last ring_seq we have reacted to
+
+function cameraEl(id) { return document.getElementById(id); }
+
+function setCameraStatus(text) {
+  const el = cameraEl("camera-viewer-status");
+  if (!el) return;
+  el.textContent = text || "";
+  el.style.display = text ? "flex" : "none";
+}
+
+function releaseCameraMedia() {
+  if (cameraViewer.abort) { cameraViewer.abort.abort(); cameraViewer.abort = null; }
+  const img = cameraEl("camera-viewer-img");
+  if (img) img.removeAttribute("src");
+  if (cameraViewer.objectUrl) { URL.revokeObjectURL(cameraViewer.objectUrl); cameraViewer.objectUrl = null; }
+}
+
+function closeCameraViewer() {
+  cameraViewer.token++;
+  releaseCameraMedia();
+  cameraViewer.devId = null;
+  const modal = cameraEl("modal-camera-viewer");
+  if (modal) modal.style.display = "none";
+  if (typeof resetIdleTimer === "function") resetIdleTimer();
+}
+
+async function errorDetail(res, fallback) {
+  try { return (await res.json()).detail || fallback; } catch (e) { return fallback; }
+}
+
+async function showCameraSnapshot() {
+  const devId = cameraViewer.devId;
+  if (!devId) return;
+  const token = ++cameraViewer.token;
+  releaseCameraMedia();
+  setCameraStatus("Waking the camera...");
+  const ctrl = new AbortController();
+  cameraViewer.abort = ctrl;
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(devId)}/snapshot?t=${Date.now()}`, { signal: ctrl.signal });
+    if (token !== cameraViewer.token) return;
+    if (!res.ok) {
+      setCameraStatus(await errorDetail(res, `Snapshot failed (${res.status})`));
+      return;
+    }
+    const blob = await res.blob();
+    if (token !== cameraViewer.token) return;
+    cameraViewer.objectUrl = URL.createObjectURL(blob);
+    cameraEl("camera-viewer-img").src = cameraViewer.objectUrl;
+    setCameraStatus("");
+  } catch (e) {
+    if (token === cameraViewer.token && e.name !== "AbortError") setCameraStatus("Snapshot failed: " + e.message);
+  }
+}
+
+async function startCameraLive() {
+  const devId = cameraViewer.devId;
+  if (!devId) return;
+  const token = ++cameraViewer.token;
+  releaseCameraMedia();
+  setCameraStatus("Starting live view (a battery camera needs a few seconds to wake)...");
+  const ctrl = new AbortController();
+  cameraViewer.abort = ctrl;
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(devId)}/live.mjpeg?t=${Date.now()}`, { signal: ctrl.signal });
+    if (token !== cameraViewer.token) return;
+    if (!res.ok) {
+      setCameraStatus(await errorDetail(res, `Live view failed (${res.status})`));
+      return;
+    }
+    // Read the multipart stream ourselves and paint the newest JPEG: one connection means one ffmpeg on the Pi
+    const reader = res.body.getReader();
+    const img = cameraEl("camera-viewer-img");
+    let buf = new Uint8Array(0);
+    let first = true;
+    while (token === cameraViewer.token) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const merged = new Uint8Array(buf.length + value.length);
+      merged.set(buf);
+      merged.set(value, buf.length);
+      buf = merged;
+      // A JPEG runs from FFD8 to FFD9: show the newest complete one and keep the remainder
+      let end = -1;
+      for (let i = buf.length - 2; i >= 0; i--) { if (buf[i] === 0xFF && buf[i + 1] === 0xD9) { end = i + 2; break; } }
+      if (end < 0) continue;
+      let start = -1;
+      for (let i = end - 2; i >= 0; i--) { if (buf[i] === 0xFF && buf[i + 1] === 0xD8) { start = i; break; } }
+      if (start >= 0) {
+        const old = cameraViewer.objectUrl;
+        cameraViewer.objectUrl = URL.createObjectURL(new Blob([buf.slice(start, end)], { type: "image/jpeg" }));
+        img.src = cameraViewer.objectUrl;
+        if (old) URL.revokeObjectURL(old);
+        if (first) { setCameraStatus(""); first = false; }
+      }
+      buf = buf.slice(end);
+    }
+    if (token === cameraViewer.token) setCameraStatus("Live view ended");
+  } catch (e) {
+    if (token === cameraViewer.token && e.name !== "AbortError") setCameraStatus("Live view failed: " + e.message);
+  }
+}
+
+function openCameraViewer(devId, mode) {
+  const dev = (state.devices || []).find(d => d.id === devId);
+  cameraViewer.devId = devId;
+  cameraEl("camera-viewer-title").textContent = dev ? dev.name : "Camera";
+  cameraEl("modal-camera-viewer").style.display = "flex";
+  if (mode === "live") startCameraLive(); else showCameraSnapshot();
+}
+
+// Called with every device update: pop up the camera when a doorbell rings.
+function checkDoorbellRings(devices) {
+  (devices || []).forEach(dev => {
+    if (deviceKind(dev) !== "camera") return;
+    const seq = dev.ring_seq || 0; // the backend only sets it once the first ring has happened
+    const known = ringSeen[dev.id];
+    ringSeen[dev.id] = seq;
+    if (known === undefined || known === seq) return; // first sighting (e.g. page load) or no new ring
+    if (typeof showToast === "function") showToast(`🔔 ${dev.name} rang`, 6000);
+    if (typeof stopScreensaver === "function") stopScreensaver();
+    openCameraViewer(dev.id, "snapshot");
+  });
+}
+
+function initCameraViewer() {
+  cameraEl("btn-camera-close").onclick = closeCameraViewer;
+  cameraEl("btn-camera-snapshot").onclick = showCameraSnapshot;
+  cameraEl("btn-camera-live").onclick = startCameraLive;
+}
+
+document.addEventListener("DOMContentLoaded", initCameraViewer);

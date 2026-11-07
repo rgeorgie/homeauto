@@ -52,4 +52,14 @@ for d in devices:
         text = json.dumps(res, default=str, indent=1) if not isinstance(res, str) else res
         text = re.sub(r'("local_key":\s*)"[^"]*"', r'\1"<hidden>"', text)  # never print the device key
         print(f"\n--- {title}  GET {path}\n{text[:1800]}")
+    if d.category == "sp":
+        # Live view needs Tuya to allocate a stream URL: show what each stream type answers
+        path = f"/v1.0/devices/{d.id}/stream/actions/allocate"
+        for kind in ("hls", "HLS", "rtsp", "RTSP"):
+            try:
+                res = api.post(path, {"type": kind})
+            except Exception as e:
+                res = f"EXCEPTION: {e}"
+            text = json.dumps(res, default=str) if not isinstance(res, str) else res
+            print(f"\n--- live stream  POST {path}  type={kind}\n{text[:600]}")
     print()

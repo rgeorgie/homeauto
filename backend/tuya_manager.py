@@ -5,7 +5,7 @@ import time
 import datetime
 import logging
 import asyncio
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
 import tinytuya
 
 try:
@@ -545,9 +545,9 @@ class TuyaManager:
     def _note_camera_events(state: Dict[str, Any], codes: Dict[str, Any]):
         """Records doorbell rings and camera alerts from a pushed status message."""
         now = time.strftime("%H:%M")
-        for code in ("doorbell_active", "doorbell_pic"):
-            if codes.get(code):  # empty string means "nothing happened"
-                state["last_ring"] = now
+        if any(codes.get(code) for code in ("doorbell_active", "doorbell_pic")):  # empty string means "nothing happened"
+            state["last_ring"] = now
+            state["ring_seq"] = state.get("ring_seq", 0) + 1  # the UI pops up the camera view when this changes
         alarm = codes.get("alarm_message")
         if isinstance(alarm, str) and alarm:
             try:
@@ -989,6 +989,31 @@ class TuyaManager:
             "error": None
         })
         return state
+
+    async def get_camera_source(self, dev_id: str) -> Tuple[Optional[str], Optional[str]]:
+        """Returns (stream_url, None) for a camera / doorbell, or (None, error message)."""
+        st = self.device_states.get(dev_id)
+        if not st or not (st.get("type") == "camera" or (st.get("category") or "").lower() == "sp"):
+            return None, "Not a camera"
+        local = next((d.stream_url for d in self.config.devices if d.id == dev_id and d.stream_url), "")
+        if local:
+            return local, None
+        if not self.cloud_api:
+            return None, "Tuya Cloud is not connected, and no local stream_url is set for this camera"
+
+        def _allocate():
+            for kind in ("HLS", "RTSP"):
+                try:
+                    res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/stream/actions/allocate", {"type": kind})
+                except Exception as e:
+                    return None, str(e)
+                url = (res or {}).get("result", {}).get("url") if isinstance(res, dict) else None
+                if res and res.get("success") and url:
+                    return url, None
+            msg = (res or {}).get("msg") if isinstance(res, dict) else None
+            return None, f"Tuya refused the live stream: {msg or 'unknown error'} (enable the IoT Video Live Stream API for the project)"
+
+        return await asyncio.get_event_loop().run_in_executor(None, _allocate)
 
     async def get_all_states(self, force_refresh: bool = False) -> List[Dict[str, Any]]:
         """Returns current device states (cached in-memory for instant response, or forced refresh)."""

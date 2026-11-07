@@ -879,6 +879,24 @@
     </div>
   </div>
 
+  <!-- Camera / Video Doorbell Viewer -->
+  <div id="modal-camera-viewer" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 720px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+        <h3 id="camera-viewer-title" style="font-size: 20px; font-weight: 700;">Camera</h3>
+        <button id="btn-camera-close" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer;">&times;</button>
+      </div>
+      <div style="position: relative; background: #000; border-radius: 12px; overflow: hidden; aspect-ratio: 16 / 9;">
+        <img id="camera-viewer-img" alt="" style="width: 100%; height: 100%; object-fit: contain; display: block;">
+        <div id="camera-viewer-status" style="position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 20px; color: var(--text-muted); font-size: 14px;"></div>
+      </div>
+      <div style="display: flex; gap: 10px; margin-top: 14px;">
+        <button class="action-btn" id="btn-camera-snapshot" style="background: rgba(255,255,255,0.1);">📸 Snapshot</button>
+        <button class="action-btn" id="btn-camera-live">🔴 Live view</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Discovered Devices Modal (Scan Results) -->
   <div id="modal-scan-results" class="modal-overlay" style="display: none;">
     <div class="modal-content" style="max-width: 720px; max-height: 85vh; display: flex; flex-direction: column;">
@@ -979,6 +997,7 @@
   <!-- Scripts -->
   <script src="/js/app.js"></script>
   <script src="/js/tuya_cards.js"></script>
+  <script src="/js/camera.js"></script>
   <script src="/js/screensaver.js"></script>
   <script src="/js/kodi.js"></script>
   <script src="/js/bt_audio.js"></script>

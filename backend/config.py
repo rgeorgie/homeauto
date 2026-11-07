@@ -19,6 +19,7 @@ class TuyaDeviceConfig(BaseModel):
     category: str = "cz"
     room: str = ""
     home: str = "" # Tuya home name (filled by cloud sync)
+    stream_url: str = "" # cameras only: optional local rtsp://user:pass@ip:554/... (otherwise Tuya Cloud live stream is used)
 
 class TuyaConfig(BaseModel):
     mode: str = "local" # local, cloud, both

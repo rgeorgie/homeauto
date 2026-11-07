@@ -398,7 +398,7 @@ function createDeviceCardHtml(dev) {
     }
   }
 
-  // --- CAMERA / VIDEO DOORBELL CARD (read-only: battery and SD card; no live video) ---
+  // --- CAMERA / VIDEO DOORBELL CARD (battery, SD card, snapshot and live view) ---
   if (kind === "camera") {
     const has = v => v !== undefined && v !== null;
     const readings = [];
@@ -426,6 +426,10 @@ function createDeviceCardHtml(dev) {
             <div class="card-icon">📷</div>
           </div>
           ${body}
+          <div style="display: flex; gap: 8px; margin-top: 14px;">
+            <button class="action-btn" style="padding: 8px 14px; font-size: 13px; background: rgba(255,255,255,0.1);" onclick="openCameraViewer('${dev.id}', 'snapshot')">📸 Snapshot</button>
+            <button class="action-btn" style="padding: 8px 14px; font-size: 13px;" onclick="openCameraViewer('${dev.id}', 'live')">🔴 Live</button>
+          </div>
         </div>
       </div>
     `;
