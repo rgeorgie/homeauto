@@ -7,7 +7,6 @@ import shutil
 import socket
 import threading
 from typing import Dict, Any, Optional, List
-import yt_dlp
 from backend.config import YouTubeAudioConfig
 
 logger = logging.getLogger("HomeAuto.MediaPlayer")
@@ -24,12 +23,6 @@ class MediaPlayer:
         self.volume: int = self.config.volume
         self._mpv_process: Optional[subprocess.Popen] = None
         self._mpv_lock = threading.Lock()  # concurrent play() calls must never leave two mpv running
-        self.ydl_opts = {
-            'format': 'bestaudio/best',
-            'quiet': True,
-            'no_warnings': True,
-            'extract_flat': False
-        }
 
     def _get_audio_env(self) -> Dict[str, str]:
         env = os.environ.copy()
@@ -70,24 +63,6 @@ class MediaPlayer:
     def reload_config(self, config: YouTubeAudioConfig):
         self.config = config
         self.volume = self.config.volume
-
-    async def get_stream_url(self, youtube_url: str) -> Optional[Dict[str, str]]:
-        """Resolves a YouTube URL to a direct audio stream URL and title."""
-        def _extract():
-            try:
-                with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
-                    info = ydl.extract_info(youtube_url, download=False)
-                    if 'entries' in info: # Playlist
-                        info = info['entries'][0]
-                    stream_url = info.get('url')
-                    title = info.get('title', 'YouTube Audio Stream')
-                    return {"stream_url": stream_url, "title": title}
-            except Exception as e:
-                logger.error(f"Error extracting stream info from {youtube_url}: {e}")
-                return None
-
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _extract)
 
     async def play(self, url_or_preset: str, title: Optional[str] = None, direct: bool = False) -> bool:
         """Plays a YouTube stream (or, with direct=True, a plain radio stream URL) via mpv with Pulse/PipeWire audio routing."""

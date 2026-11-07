@@ -80,6 +80,13 @@ exec $CHROMIUM_BIN \
   --disable-dev-shm-usage \
   --enable-gpu-rasterization \
   --ignore-gpu-blocklist \
+  --renderer-process-limit=1 \
+  --disable-sync \
+  --disable-extensions \
+  --no-first-run \
+  --js-flags="--max-old-space-size=192" \
+  --disk-cache-size=1 \
+  --media-cache-size=1 \
   --enable-features=OverlayScrollbar,TouchEvents \
   --ozone-platform-hint=auto \
   --log-level=3 \

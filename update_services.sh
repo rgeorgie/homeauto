@@ -79,15 +79,54 @@ KillMode=control-group
 KillSignal=SIGTERM
 SendSIGKILL=yes
 FinalKillSignal=SIGKILL
+# Chromium grows over time: reclaim above High, kill (and auto-restart) above Max
+MemoryHigh=450M
+MemoryMax=550M
 
 [Install]
 WantedBy=default.target
 EOF
 
+# 5b. Restart the kiosk browser every night to release leaked memory
+cat > "$USER_SYSTEMD_DIR/homeauto-kiosk-restart.service" <<EOF
+[Unit]
+Description=Restart HomeAuto kiosk browser to free memory
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/systemctl --user restart homeauto-kiosk.service
+EOF
+
+cat > "$USER_SYSTEMD_DIR/homeauto-kiosk-restart.timer" <<EOF
+[Unit]
+Description=Nightly HomeAuto kiosk browser restart
+
+[Timer]
+OnCalendar=*-*-* 04:00:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
+EOF
+
+# 5c. zram compressed swap (much faster than SD-card swap on a 1 GB board)
+echo "==> Enabling zram swap..."
+if ! dpkg -s systemd-zram-generator >/dev/null 2>&1 && ! dpkg -s zram-tools >/dev/null 2>&1; then
+  sudo apt-get install -y systemd-zram-generator >/dev/null 2>&1 || sudo apt-get install -y zram-tools >/dev/null 2>&1 || true
+fi
+if dpkg -s systemd-zram-generator >/dev/null 2>&1; then
+  printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\nswap-priority = 100\n' | sudo tee /etc/systemd/zram-generator.conf >/dev/null
+  sudo systemctl daemon-reload
+  sudo systemctl restart systemd-zram-setup@zram0.service 2>/dev/null || true
+fi
+sudo sysctl -q vm.swappiness=100 2>/dev/null || true
+echo "vm.swappiness=100" | sudo tee /etc/sysctl.d/98-homeauto-swap.conf >/dev/null
+
 # 6. Reload and start user services
 systemctl --user daemon-reload
 systemctl --user enable --now homeauto.service
 systemctl --user enable --now homeauto-kiosk.service
+systemctl --user enable --now homeauto-kiosk-restart.timer
 
 echo ""
 echo "🎉 HomeAuto is now running in your native user session with full PipeWire & Bluetooth audio access!"
