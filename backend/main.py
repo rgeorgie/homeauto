@@ -244,24 +244,24 @@ async def feed_pet_endpoint(device_id: str, payload: Dict[str, int] = Body(defau
     })
     return {"status": "ok", "device_id": device_id, "portions": portions}
 
-async def _camera_source(device_id: str) -> str:
+async def _camera_sources(device_id: str) -> List[str]:
     if not camera_stream.ffmpeg_available():
         raise HTTPException(status_code=503, detail="ffmpeg is not installed (sudo apt install ffmpeg)")
-    url, err = await tuya_mgr.get_camera_source(device_id)
-    if not url:
+    urls, err = await tuya_mgr.get_camera_sources(device_id)
+    if not urls:
         raise HTTPException(status_code=503, detail=err or "No stream available")
-    return url
+    return urls
 
 @app.get("/api/devices/{device_id}/snapshot")
 async def camera_snapshot(device_id: str):
-    data = await camera_stream.streamer.snapshot(await _camera_source(device_id))
+    data = await camera_stream.streamer.snapshot(await _camera_sources(device_id))
     if not data:
         raise HTTPException(status_code=504, detail="The camera did not deliver a picture (is it online?)")
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
 @app.get("/api/devices/{device_id}/live.mjpeg")
 async def camera_live(device_id: str):
-    opened = await camera_stream.streamer.open_live(await _camera_source(device_id))
+    opened = await camera_stream.streamer.open_live(await _camera_sources(device_id))
     if not opened:
         raise HTTPException(status_code=504, detail="The camera did not deliver video (is it online?)")
     proc, first = opened

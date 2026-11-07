@@ -990,28 +990,34 @@ class TuyaManager:
         })
         return state
 
-    async def get_camera_source(self, dev_id: str) -> Tuple[Optional[str], Optional[str]]:
-        """Returns (stream_url, None) for a camera / doorbell, or (None, error message)."""
+    async def get_camera_sources(self, dev_id: str) -> Tuple[List[str], Optional[str]]:
+        """Returns (stream URLs to try in order, None) for a camera / doorbell, or ([], error message)."""
         st = self.device_states.get(dev_id)
         if not st or not (st.get("type") == "camera" or (st.get("category") or "").lower() == "sp"):
-            return None, "Not a camera"
+            return [], "Not a camera"
         local = next((d.stream_url for d in self.config.devices if d.id == dev_id and d.stream_url), "")
         if local:
-            return local, None
+            return [local], None
         if not self.cloud_api:
-            return None, "Tuya Cloud is not connected, and no local stream_url is set for this camera"
+            return [], "Tuya Cloud is not connected, and no local stream_url is set for this camera"
 
         def _allocate():
-            for kind in ("HLS", "RTSP"):
+            # Both types are allocated up front: if one yields no picture the other is tried (RTSP wakes sleeping cameras more reliably)
+            urls, msg = [], None
+            for kind in ("RTSP", "HLS"):
                 try:
                     res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/stream/actions/allocate", {"type": kind})
                 except Exception as e:
-                    return None, str(e)
-                url = (res or {}).get("result", {}).get("url") if isinstance(res, dict) else None
-                if res and res.get("success") and url:
-                    return url, None
-            msg = (res or {}).get("msg") if isinstance(res, dict) else None
-            return None, f"Tuya refused the live stream: {msg or 'unknown error'} (enable the IoT Video Live Stream API for the project)"
+                    msg = str(e)
+                    continue
+                url = (res.get("result") or {}).get("url") if isinstance(res, dict) else None
+                if isinstance(res, dict) and res.get("success") and url:
+                    urls.append(url)
+                elif isinstance(res, dict):
+                    msg = res.get("msg") or msg
+            if urls:
+                return urls, None
+            return [], f"Tuya refused the live stream: {msg or 'unknown error'} (enable the IoT Video Live Stream API for the project)"
 
         return await asyncio.get_event_loop().run_in_executor(None, _allocate)
 
