@@ -282,6 +282,29 @@ async def camera_live(device_id: str):
     return StreamingResponse(camera_stream.streamer.iter_live(proc, first),
                              media_type=camera_stream.LIVE_MEDIA_TYPE, headers={"Cache-Control": "no-store"})
 
+@app.get("/api/devices/{device_id}/camera-controls")
+async def get_camera_controls(device_id: str):
+    try:
+        return await tuya_mgr.get_camera_controls(device_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Could not read the camera's settings: {e}")
+
+@app.post("/api/devices/{device_id}/camera-controls")
+async def set_camera_control(device_id: str, payload: Dict[str, Any] = Body(...)):
+    err = await tuya_mgr.set_camera_control(device_id, str(payload.get("code", "")), payload.get("value"))
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "ok"}
+
+@app.post("/api/devices/{device_id}/camera-move")
+async def move_camera(device_id: str, payload: Dict[str, Any] = Body(...)):
+    err = await tuya_mgr.move_camera(device_id, str(payload.get("direction", "")))
+    if err:
+        raise HTTPException(status_code=400, detail=err)
+    return {"status": "ok"}
+
 def _describe_camera(device_id: str):
     st = tuya_mgr.device_states.get(device_id) or {}
     return st.get("name") or device_id, st.get("battery") is not None

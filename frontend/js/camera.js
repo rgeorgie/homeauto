@@ -21,6 +21,9 @@ function releaseCameraMedia() {
 }
 
 function closeCameraViewer() {
+  cameraControlsToken++;
+  const panel = cameraEl("camera-controls-panel");
+  if (panel) { panel.style.display = "none"; panel.innerHTML = ""; }
   cameraViewer.token++;
   releaseCameraMedia();
   cameraViewer.devId = null;
@@ -107,6 +110,9 @@ async function startCameraLive() {
 }
 
 function openCameraViewer(devId, mode) {
+  cameraControlsToken++;
+  const panel = cameraEl("camera-controls-panel");
+  if (panel) { panel.style.display = "none"; panel.innerHTML = ""; }
   const dev = (state.devices || []).find(d => d.id === devId);
   cameraViewer.devId = devId;
   cameraEl("camera-viewer-title").textContent = dev ? dev.name : "Camera";
@@ -126,6 +132,111 @@ function checkDoorbellRings(devices) {
     if (typeof stopScreensaver === "function") stopScreensaver();
     openCameraViewer(dev.id, "snapshot");
   });
+}
+
+// ----- Controls: pan/tilt and the settings this camera model supports (the backend reads them from Tuya) -----
+
+let cameraControlsToken = 0;
+const PTZ_PAD = [["up_left", "↖"], ["up", "↑"], ["up_right", "↗"], ["left", "←"], null, ["right", "→"], ["down_left", "↙"], ["down", "↓"], ["down_right", "↘"]];
+
+async function sendCameraControl(code, value, rollback) {
+  const devId = cameraViewer.devId;
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(devId)}/camera-controls`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ code, value }),
+    });
+    if (!res.ok) throw new Error(await errorDetail(res, `Failed (${res.status})`));
+  } catch (e) {
+    if (rollback) rollback();
+    showToast("Camera: " + e.message);
+  }
+}
+
+async function moveCamera(direction, btn) {
+  const devId = cameraViewer.devId;
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(devId)}/camera-move`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ direction }),
+    });
+    if (!res.ok) showToast("Camera: " + await errorDetail(res, `Move failed (${res.status})`));
+  } catch (e) {
+    showToast("Camera: " + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function controlRowHtml(c) {
+  const id = `cam-ctl-${c.code}`;
+  const label = `<label for="${id}" style="font-size: 14px;">${escapeHtml(c.label)}</label>`;
+  let input = "";
+  if (c.kind === "bool") {
+    input = `<button id="${id}" class="device-toggle-btn ${c.value ? "is-on" : ""}" data-code="${c.code}" data-kind="bool" style="width: auto; padding: 6px 16px; font-size: 13px;">${c.value ? "On" : "Off"}</button>`;
+  } else if (c.kind === "enum") {
+    input = `<select id="${id}" class="form-select" data-code="${c.code}" data-kind="enum" style="width: auto; min-width: 130px;">${
+      (c.value == null ? '<option value="" disabled selected>-</option>' : "") +
+      c.options.map(o => `<option value="${escapeHtml(o.value)}" ${o.value === c.value ? "selected" : ""}>${escapeHtml(o.label)}</option>`).join("")}</select>`;
+  } else if (c.kind === "range") {
+    const v = c.value == null ? c.min : c.value;
+    input = `<span style="display: flex; align-items: center; gap: 10px;"><input id="${id}" type="range" class="touch-slider" style="width: 150px;" data-code="${c.code}" data-kind="range" min="${c.min}" max="${c.max}" step="${c.step}" value="${v}"><span data-value-of="${c.code}" style="font-size: 13px; min-width: 38px;">${v}${escapeHtml(c.unit || "")}</span></span>`;
+  }
+  return `<div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 0;">${label}${input}</div>`;
+}
+
+function bindControlRow(panel, c) {
+  const el = panel.querySelector(`#cam-ctl-${c.code}`);
+  if (!el) return;
+  if (c.kind === "bool") {
+    el.onclick = () => {
+      const next = !el.classList.contains("is-on");
+      const set = on => { el.classList.toggle("is-on", on); el.textContent = on ? "On" : "Off"; };
+      set(next);
+      sendCameraControl(c.code, next, () => set(!next));
+    };
+  } else if (c.kind === "enum") {
+    let previous = el.value;
+    el.onchange = () => {
+      const chosen = el.value, back = previous;
+      previous = chosen;
+      sendCameraControl(c.code, chosen, () => { el.value = back; previous = back; });
+    };
+  } else if (c.kind === "range") {
+    const shown = panel.querySelector(`[data-value-of="${c.code}"]`);
+    el.oninput = () => { shown.textContent = el.value + (c.unit || ""); };
+    el.onchange = () => sendCameraControl(c.code, parseInt(el.value, 10));
+  }
+}
+
+async function loadCameraControls() {
+  const panel = cameraEl("camera-controls-panel");
+  const devId = cameraViewer.devId;
+  if (!panel || !devId) return;
+  const token = ++cameraControlsToken;
+  panel.style.display = "block";
+  panel.innerHTML = `<div style="color: var(--text-muted); font-size: 13px;">Reading the camera's settings...</div>`;
+  try {
+    const res = await fetch(`/api/devices/${encodeURIComponent(devId)}/camera-controls`);
+    if (token !== cameraControlsToken) return;
+    if (!res.ok) throw new Error(await errorDetail(res, `Failed (${res.status})`));
+    const data = await res.json();
+    if (token !== cameraControlsToken) return;
+    if (!data.ptz.length && !data.controls.length) {
+      panel.innerHTML = `<div style="color: var(--text-muted); font-size: 13px;">This camera has no settings that can be changed here.</div>`;
+      return;
+    }
+    const pad = data.ptz.length ? `
+      <div style="display: grid; grid-template-columns: repeat(3, 52px); grid-auto-rows: 44px; gap: 6px; justify-content: center; margin-bottom: 12px;">
+        ${PTZ_PAD.map(p => !p ? "<span></span>" : (data.ptz.includes(p[0])
+            ? `<button class="action-btn" data-ptz="${p[0]}" style="padding: 0; font-size: 18px; background: rgba(255,255,255,0.1);">${p[1]}</button>`
+            : "<span></span>")).join("")}
+      </div>` : "";
+    panel.innerHTML = pad + data.controls.map(controlRowHtml).join("");
+    panel.querySelectorAll("[data-ptz]").forEach(b => { b.onclick = () => moveCamera(b.dataset.ptz, b); });
+    data.controls.forEach(c => bindControlRow(panel, c));
+  } catch (e) {
+    if (token === cameraControlsToken) panel.innerHTML = `<div style="color: var(--accent-amber); font-size: 13px;">${escapeHtml(e.message)}</div>`;
+  }
 }
 
 // ----- History of rings and alerts (pictures stored by the backend) -----
@@ -162,6 +273,9 @@ function openEventPicture(eventId) {
   const e = cameraEvents.find(x => x.id === eventId);
   if (!e || !e.image_url) return;
   cameraViewer.token++;          // stop anything still loading in the viewer
+  cameraControlsToken++;
+  const panel = cameraEl("camera-controls-panel");
+  if (panel) { panel.style.display = "none"; panel.innerHTML = ""; }
   releaseCameraMedia();
   cameraViewer.devId = e.dev_id;
   cameraEl("camera-viewer-title").textContent = `${e.dev_name} \u2022 ${e.label} \u2022 ${formatEventTime(e.ts)}`;
@@ -189,6 +303,10 @@ function initCameraViewer() {
   cameraEl("btn-camera-close").onclick = closeCameraViewer;
   cameraEl("btn-camera-snapshot").onclick = showCameraSnapshot;
   cameraEl("btn-camera-live").onclick = startCameraLive;
+  cameraEl("btn-camera-settings").onclick = () => {
+    const panel = cameraEl("camera-controls-panel");
+    if (panel.style.display === "block") { cameraControlsToken++; panel.style.display = "none"; } else loadCameraControls();
+  };
   cameraEl("btn-clear-camera-events").onclick = async () => {
     if (!confirm("Delete the doorbell and camera history?")) return;
     await fetch("/api/camera-events", { method: "DELETE" });

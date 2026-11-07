@@ -7,6 +7,7 @@ import logging
 import asyncio
 from typing import Callable, Dict, Any, List, Optional, Tuple
 import tinytuya
+from backend import camera_controls
 
 try:
     from tuya_connector import TuyaOpenAPI, TuyaOpenPulsar, TuyaCloudPulsarTopic
@@ -401,6 +402,7 @@ class TuyaManager:
         self._pulsar_stats: Dict[str, Any] = {"messages": 0, "last_message_at": None, "last_error": None}
         self._poll_task: Optional[asyncio.Task] = None
         self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self._camera_specs: Dict[str, Dict[str, Any]] = {}  # dev id -> Tuya specification (what the camera accepts)
         self.on_camera_event: Optional[Callable[[str, str, str], None]] = None  # (device id, "ring" | "alert", label), called on the event loop
         self._init_cloud()
         self._init_local_devices()
@@ -1001,6 +1003,79 @@ class TuyaManager:
             "error": None
         })
         return state
+
+    # ----- camera controls (always through the cloud: these cameras have no local protocol) -----
+
+    def _camera_spec(self, dev_id: str) -> Dict[str, Any]:
+        """The camera's Tuya specification, fetched once (blocking: call from an executor)."""
+        if dev_id not in self._camera_specs:
+            res = self.cloud_api.get(f"/v1.0/devices/{dev_id}/specifications")
+            if not (isinstance(res, dict) and res.get("success") and isinstance(res.get("result"), dict)):
+                raise RuntimeError((res or {}).get("msg") if isinstance(res, dict) else "no answer from Tuya Cloud")
+            self._camera_specs[dev_id] = res["result"]
+        return self._camera_specs[dev_id]
+
+    def _is_camera(self, dev_id: str) -> bool:
+        st = self.device_states.get(dev_id) or {}
+        return st.get("type") == "camera" or (st.get("category") or "").lower() == "sp"
+
+    async def get_camera_controls(self, dev_id: str) -> Dict[str, Any]:
+        if not self._is_camera(dev_id):
+            raise ValueError("Not a camera")
+        if not self.cloud_api:
+            raise RuntimeError("Tuya Cloud is not connected")
+        spec = await asyncio.get_event_loop().run_in_executor(None, self._camera_spec, dev_id)
+        return camera_controls.build_controls(spec, (self.device_states.get(dev_id) or {}).get("cloud_codes") or {})
+
+    async def _send_camera_commands(self, dev_id: str, commands: List[Dict[str, Any]]) -> Optional[str]:
+        """Sends commands in order. Returns None on success, otherwise Tuya's reason."""
+        def _send():
+            for cmd in commands:
+                payload = {k: v for k, v in cmd.items() if k != "pause"}  # "pause" is ours (seconds to wait afterwards), not Tuya's
+                res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": [payload]})
+                if not (isinstance(res, dict) and res.get("success")):
+                    return (res or {}).get("msg") if isinstance(res, dict) else "no answer from Tuya Cloud"
+                if cmd.get("pause"):
+                    time.sleep(cmd["pause"])
+            return None
+        return await asyncio.get_event_loop().run_in_executor(None, _send)
+
+    async def set_camera_control(self, dev_id: str, code: str, value: Any) -> Optional[str]:
+        """Changes one camera setting. Returns None on success, otherwise the reason it failed."""
+        if not self._is_camera(dev_id):
+            return "Not a camera"
+        if not self.cloud_api:
+            return "Tuya Cloud is not connected"
+        try:
+            spec = await asyncio.get_event_loop().run_in_executor(None, self._camera_spec, dev_id)
+        except Exception as e:
+            return f"Could not read the camera's capabilities: {e}"
+        checked, why = camera_controls.check_command(spec, code, value)
+        if why:
+            return why
+        err = await self._send_camera_commands(dev_id, [{"code": code, "value": checked}])
+        if err is None:
+            codes = (self.device_states.get(dev_id) or {}).get("cloud_codes")
+            if isinstance(codes, dict):
+                codes[code] = checked
+        return err
+
+    async def move_camera(self, dev_id: str, direction: str) -> Optional[str]:
+        """Nudges a pan/tilt camera: start moving, then stop (a tap moves it a little)."""
+        if not self._is_camera(dev_id):
+            return "Not a camera"
+        if not self.cloud_api:
+            return "Tuya Cloud is not connected"
+        try:
+            spec = await asyncio.get_event_loop().run_in_executor(None, self._camera_spec, dev_id)
+        except Exception as e:
+            return f"Could not read the camera's capabilities: {e}"
+        if direction not in camera_controls.build_controls(spec, {})["ptz"]:
+            return "This camera cannot move in that direction"
+        return await self._send_camera_commands(dev_id, [
+            {"code": "ptz_control", "value": camera_controls.PTZ_DIRECTIONS[direction], "pause": 0.4},
+            {"code": "ptz_stop", "value": True},
+        ])
 
     async def get_camera_sources(self, dev_id: str) -> Tuple[List[str], Optional[str]]:
         """Returns (stream URLs to try in order, None) for a camera / doorbell, or ([], error message)."""
