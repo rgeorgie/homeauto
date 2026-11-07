@@ -13,6 +13,9 @@ import json
 import re
 import sys
 import time
+from urllib.parse import urljoin
+
+import requests
 
 from backend.config import load_config
 
@@ -74,6 +77,35 @@ def hide_secrets(text):
     return re.sub(r'(rtsps?|https?)://[^"\s]+', lambda m: m.group(1) + "://<hidden>", text)
 
 
+def inspect_playlist(url, depth=0):
+    """Fetches an HLS playlist and says whether it is live (no end marker) or a finite recording."""
+    try:
+        r = requests.get(url, timeout=20)
+    except Exception as e:
+        return f"fetch failed: {e}"
+    text = r.text
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+    if r.status_code != 200 or not lines or lines[0] != "#EXTM3U":
+        return f"HTTP {r.status_code}, not a playlist: {hide_secrets(text[:200])!r}"
+    if depth < 2 and any(l.startswith("#EXT-X-STREAM-INF") for l in lines):
+        variant = next(l for l in lines if not l.startswith("#"))
+        return "master playlist -> " + inspect_playlist(urljoin(url, variant), depth + 1)
+    durations = [float(m.group(1)) for l in lines for m in [re.match(r"#EXTINF:([\d.]+)", l)] if m]
+    ended = "#EXT-X-ENDLIST" in lines
+    kind = next((l.split(":", 1)[1] for l in lines if l.startswith("#EXT-X-PLAYLIST-TYPE")), "none")
+    return (f"{len(durations)} segments, {sum(durations):.0f}s of video, ENDLIST={'yes' if ended else 'NO'}, "
+            f"playlist-type={kind}  =>  {'finite (a recording)' if ended else 'open-ended (live)'}")
+
+
+def allocate_hls(dev, body):
+    try:
+        res = api.post(f"/v1.0/devices/{dev.id}/stream/actions/allocate", body)
+    except Exception as e:
+        return None, f"EXCEPTION: {e}"
+    url = (res.get("result") or {}).get("url") if isinstance(res, dict) else None
+    return url, (None if url else f"no url: code={res.get('code')} msg={res.get('msg')}" if isinstance(res, dict) else str(res))
+
+
 for d in devices:
     print("=" * 70)
     print(f"{d.name}  id={d.id}")
@@ -93,4 +125,10 @@ for d in devices:
         print(f"\n{verdict}  {shown}")
         if detail:
             print("   " + hide_secrets(detail)[:700])
+    print("\n--- HLS check: does a time range change the stream? ---")
+    for label, body in (("no time range  ", {"type": "HLS"}),
+                        ("last 24 hours  ", {"type": "HLS", "start_time": str(START), "end_time": str(END)}),
+                        ("1 hour ago, 5m ", {"type": "HLS", "start_time": str(END - 3600), "end_time": str(END - 3300)})):
+        url, err = allocate_hls(d, body)
+        print(f"{label}: {err or inspect_playlist(url)}")
     print()
