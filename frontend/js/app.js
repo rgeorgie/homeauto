@@ -133,6 +133,8 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === "state_update" || msg.type === "initial_state") {
           applyStateUpdate(msg.data);
+        } else if (msg.type === "camera_event" && typeof onCameraEvent === "function") {
+          onCameraEvent(msg.data);
         }
       } catch (err) {
         console.error("WebSocket message parse error:", err);

@@ -128,10 +128,74 @@ function checkDoorbellRings(devices) {
   });
 }
 
+// ----- History of rings and alerts (pictures stored by the backend) -----
+
+let cameraEvents = [];
+
+function formatEventTime(ts) {
+  const d = new Date(ts * 1000);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const today = new Date();
+  if (d.toDateString() === today.toDateString()) return time;
+  return `${d.toLocaleDateString([], { month: "short", day: "numeric" })} ${time}`;
+}
+
+function renderCameraEvents() {
+  const panel = cameraEl("camera-events-panel");
+  const list = cameraEl("camera-events-list");
+  if (!panel || !list) return;
+  panel.style.display = cameraEvents.length ? "block" : "none";
+  list.innerHTML = cameraEvents.slice(0, 20).map(e => `
+    <div style="flex: 0 0 168px;">
+      <div style="width: 168px; height: 95px; background: #000; border-radius: 10px; overflow: hidden; display: flex; align-items: center; justify-content: center; ${e.image_url ? "cursor: pointer;" : ""}"
+           ${e.image_url ? `onclick="openEventPicture('${e.id}')"` : ""}>
+        ${e.image_url
+          ? `<img src="${e.image_url}" loading="lazy" alt="" style="width: 100%; height: 100%; object-fit: cover;">`
+          : `<span style="color: var(--text-muted); font-size: 12px;">No picture</span>`}
+      </div>
+      <div style="font-size: 12px; margin-top: 6px;">${e.kind === "ring" ? "🔔" : "⚠️"} <strong>${escapeHtml(e.label)}</strong></div>
+      <div style="font-size: 11px; color: var(--text-muted);">${escapeHtml(e.dev_name)} &bull; ${formatEventTime(e.ts)}</div>
+    </div>`).join("");
+}
+
+function openEventPicture(eventId) {
+  const e = cameraEvents.find(x => x.id === eventId);
+  if (!e || !e.image_url) return;
+  cameraViewer.token++;          // stop anything still loading in the viewer
+  releaseCameraMedia();
+  cameraViewer.devId = e.dev_id;
+  cameraEl("camera-viewer-title").textContent = `${e.dev_name} \u2022 ${e.label} \u2022 ${formatEventTime(e.ts)}`;
+  cameraEl("camera-viewer-img").src = e.image_url;
+  setCameraStatus("");
+  cameraEl("modal-camera-viewer").style.display = "flex";
+}
+
+// Called by app.js for every pushed "camera_event" message
+function onCameraEvent(event) {
+  if (!event || cameraEvents.some(e => e.id === event.id)) return;
+  cameraEvents.unshift(event);
+  cameraEvents.length = Math.min(cameraEvents.length, 60);
+  renderCameraEvents();
+}
+
+async function loadCameraEvents() {
+  try {
+    const res = await fetch("/api/camera-events");
+    if (res.ok) { cameraEvents = await res.json(); renderCameraEvents(); }
+  } catch (e) { /* the list stays empty until the next event */ }
+}
+
 function initCameraViewer() {
   cameraEl("btn-camera-close").onclick = closeCameraViewer;
   cameraEl("btn-camera-snapshot").onclick = showCameraSnapshot;
   cameraEl("btn-camera-live").onclick = startCameraLive;
+  cameraEl("btn-clear-camera-events").onclick = async () => {
+    if (!confirm("Delete the doorbell and camera history?")) return;
+    await fetch("/api/camera-events", { method: "DELETE" });
+    cameraEvents = [];
+    renderCameraEvents();
+  };
+  loadCameraEvents();
 }
 
 document.addEventListener("DOMContentLoaded", initCameraViewer);

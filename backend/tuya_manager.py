@@ -5,7 +5,7 @@ import time
 import datetime
 import logging
 import asyncio
-from typing import Dict, Any, List, Optional, Tuple
+from typing import Callable, Dict, Any, List, Optional, Tuple
 import tinytuya
 
 try:
@@ -400,11 +400,14 @@ class TuyaManager:
         self._pulsar_started_at: float = 0.0
         self._pulsar_stats: Dict[str, Any] = {"messages": 0, "last_message_at": None, "last_error": None}
         self._poll_task: Optional[asyncio.Task] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+        self.on_camera_event: Optional[Callable[[str, str, str], None]] = None  # (device id, "ring" | "alert", label), called on the event loop
         self._init_cloud()
         self._init_local_devices()
 
     def start_background_service(self):
         self._running = True
+        self._loop = asyncio.get_running_loop()
         if not self._poll_task or self._poll_task.done():
             self._poll_task = asyncio.create_task(self._background_poll_loop())
             logger.info("Started Tuya background device polling worker.")
@@ -534,7 +537,10 @@ class TuyaManager:
         if not isinstance(status, list):
             return
         new_codes = {i["code"]: i.get("value") for i in status if isinstance(i, dict) and i.get("code")}
-        self._note_camera_events(state, new_codes)
+        events = self._note_camera_events(state, new_codes)
+        if events and self.on_camera_event and self._loop:
+            for kind, label in events:
+                self._loop.call_soon_threadsafe(self.on_camera_event, dev_id, kind, label)
         # Only cloud-polled devices: locally reachable ones are refreshed every few seconds already,
         # and a partial cloud update must not overwrite their state.
         if state.get("source") != "cloud" or not state.get("cloud_codes"):
@@ -542,20 +548,26 @@ class TuyaManager:
         self._apply_cloud_codes(state, {**state["cloud_codes"], **new_codes})
 
     @staticmethod
-    def _note_camera_events(state: Dict[str, Any], codes: Dict[str, Any]):
-        """Records doorbell rings and camera alerts from a pushed status message."""
+    def _note_camera_events(state: Dict[str, Any], codes: Dict[str, Any]) -> List[Tuple[str, str]]:
+        """Records doorbell rings and camera alerts from a pushed status message. Returns the (kind, label) events to log."""
         now = time.strftime("%H:%M")
+        events: List[Tuple[str, str]] = []
         if any(codes.get(code) for code in ("doorbell_active", "doorbell_pic")):  # empty string means "nothing happened"
             state["last_ring"] = now
             state["ring_seq"] = state.get("ring_seq", 0) + 1  # the UI pops up the camera view when this changes
+            events.append(("ring", "Doorbell ring"))
         alarm = codes.get("alarm_message")
         if isinstance(alarm, str) and alarm:
             try:
                 cmd = json.loads(base64.b64decode(alarm + "=" * (-len(alarm) % 4))).get("cmd", "")
             except Exception:
                 cmd = ""
-            state["last_alert"] = {"ipc_human": "Person detected", "ipc_motion": "Motion detected"}.get(cmd, "Alert")
+            label = {"ipc_human": "Person detected", "ipc_motion": "Motion detected"}.get(cmd)
+            state["last_alert"] = label or "Alert"
             state["last_alert_at"] = now
+            if label:  # other alerts (low battery, ...) are not worth a picture
+                events.append(("alert", label))
+        return events
 
     def _init_local_devices(self):
         for dev_conf in self.config.devices:

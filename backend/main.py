@@ -1,7 +1,7 @@
 import os
 import asyncio
 import logging
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Optional, Set
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Body, Request
@@ -20,6 +20,7 @@ from backend.screensaver_manager import ScreensaverManager
 from backend.system_manager import SystemManager
 from backend import pi_control
 from backend import camera_stream
+from backend.camera_events import CameraEventLog
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HomeAuto.Server")
@@ -252,9 +253,22 @@ async def _camera_sources(device_id: str) -> List[str]:
         raise HTTPException(status_code=503, detail=err or "No stream available")
     return urls
 
+_snapshot_tasks: Dict[str, "asyncio.Future"] = {}
+
+async def _shared_snapshot(device_id: str) -> Optional[bytes]:
+    """One snapshot at a time per camera: the ring popup and the event log asking together share a single ffmpeg / wake-up."""
+    task = _snapshot_tasks.get(device_id)
+    if task is None or task.done():
+        async def run():
+            return await camera_stream.streamer.snapshot(await _camera_sources(device_id))
+        task = asyncio.ensure_future(run())
+        _snapshot_tasks[device_id] = task
+        task.add_done_callback(lambda t: _snapshot_tasks.pop(device_id, None) if _snapshot_tasks.get(device_id) is t else None)
+    return await asyncio.shield(task)
+
 @app.get("/api/devices/{device_id}/snapshot")
 async def camera_snapshot(device_id: str):
-    data = await camera_stream.streamer.snapshot(await _camera_sources(device_id))
+    data = await _shared_snapshot(device_id)
     if not data:
         raise HTTPException(status_code=504, detail="The camera did not deliver a picture (is it online?)")
     return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
@@ -267,6 +281,32 @@ async def camera_live(device_id: str):
     proc, first = opened
     return StreamingResponse(camera_stream.streamer.iter_live(proc, first),
                              media_type=camera_stream.LIVE_MEDIA_TYPE, headers={"Cache-Control": "no-store"})
+
+def _describe_camera(device_id: str):
+    st = tuya_mgr.device_states.get(device_id) or {}
+    return st.get("name") or device_id, st.get("battery") is not None
+
+async def _broadcast_camera_event(event: Dict[str, Any]):
+    await ws_manager.broadcast({"type": "camera_event", "data": event})
+
+camera_log = CameraEventLog(_shared_snapshot, _describe_camera, _broadcast_camera_event)
+tuya_mgr.on_camera_event = lambda dev_id, kind, label: asyncio.ensure_future(camera_log.capture(dev_id, kind, label))
+
+@app.get("/api/camera-events")
+async def list_camera_events():
+    return camera_log.list()
+
+@app.get("/api/camera-events/{event_id}/image")
+async def camera_event_image(event_id: str):
+    path = camera_log.image_path(event_id)
+    if not path:
+        raise HTTPException(status_code=404, detail="No picture for this event")
+    return FileResponse(path, media_type="image/jpeg")
+
+@app.delete("/api/camera-events")
+async def clear_camera_events():
+    await asyncio.get_event_loop().run_in_executor(None, camera_log.clear)
+    return {"status": "ok"}
 
 @app.post("/api/devices/scan")
 async def scan_tuya_devices():
