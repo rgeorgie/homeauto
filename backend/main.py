@@ -566,7 +566,21 @@ async def play_media(payload: Dict[str, Any] = Body(...)):
     if not url:
         raise HTTPException(status_code=400, detail="URL is required")
     await media_player.play(url, title, direct=bool(payload.get("direct", False)))
-    return media_player.get_status()
+    status = media_player.get_status()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "media": status }
+    })
+    return status
+
+@app.get("/api/media/stream")
+async def get_media_stream():
+    status = media_player.get_status()
+    stream_url = status.get("stream_url")
+    if not stream_url:
+        raise HTTPException(status_code=404, detail="No active stream")
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=stream_url)
 
 @app.get("/api/radio/stations")
 async def radio_stations(country: str = "BG", q: str = ""):
@@ -599,17 +613,32 @@ async def radio_remove_favorite(payload: Dict[str, str] = Body(...)):
 @app.post("/api/media/pause")
 async def pause_media():
     media_player.pause()
-    return media_player.get_status()
+    status = media_player.get_status()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "media": status }
+    })
+    return status
 
 @app.post("/api/media/stop")
 async def stop_media():
     media_player.stop()
-    return media_player.get_status()
+    status = media_player.get_status()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "media": status }
+    })
+    return status
 
 @app.post("/api/media/volume")
 async def set_media_volume(payload: Dict[str, int] = Body(...)):
     vol = payload.get("volume", 50)
     media_player.set_volume(vol)
+    status = media_player.get_status()
+    await ws_manager.broadcast({
+        "type": "state_update",
+        "data": { "media": status }
+    })
     return {"volume": media_player.volume}
 
 # Screensaver & Ambient
@@ -678,9 +707,10 @@ async def toggle_display(payload: Dict[str, bool] = Body(...)):
 # (the kiosk browser talks to 127.0.0.1). Other devices on the network get 403.
 
 def _require_local(request: Request):
-    host = request.client.host if request.client else ""
-    if host not in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"):
-        raise HTTPException(status_code=403, detail="Raspberry Pi controls only work from the Pi's own screen (http://127.0.0.1)")
+    if not getattr(config.server, "allow_remote_admin", True):
+        host = request.client.host if request.client else ""
+        if host not in ("127.0.0.1", "::1", "localhost", "::ffff:127.0.0.1"):
+            raise HTTPException(status_code=403, detail="Raspberry Pi controls only work from the Pi's own screen (http://127.0.0.1)")
 
 async def _pi(request: Request, func, *args):
     _require_local(request)

@@ -32,15 +32,22 @@ if [ -f "$PREFS_FILE" ]; then
   sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS_FILE" 2>/dev/null || true
 fi
 
-# HomeAuto server port from config.yaml (default 80)
+# HomeAuto server URL: configurable via HOMEAUTO_SERVER env var or 1st arg (e.g. http://192.168.1.100:80)
+# Defaults to local server port from config.yaml (default 80)
 KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PORT="$(awk '/^server:/{f=1;next} f&&/^[^ #]/{f=0} f&&/port:/{print $2; exit}' "$KIOSK_DIR/config.yaml" 2>/dev/null)"
-PORT="${PORT:-80}"
-BASE_URL="http://127.0.0.1:${PORT}"
+CUSTOM_SERVER="${HOMEAUTO_SERVER:-$1}"
 
-# Wait for HomeAuto backend to be ready (up to 10s, fast poll)
+if [ -n "$CUSTOM_SERVER" ]; then
+  BASE_URL="${CUSTOM_SERVER%/}"
+else
+  PORT="$(awk '/^server:/{f=1;next} f&&/^[^ #]/{f=0} f&&/port:/{print $2; exit}' "$KIOSK_DIR/config.yaml" 2>/dev/null)"
+  PORT="${PORT:-80}"
+  BASE_URL="http://127.0.0.1:${PORT}"
+fi
+
+# Wait for HomeAuto backend to be ready (up to 20s, fast poll)
 echo "Waiting for HomeAuto server at ${BASE_URL}..."
-for i in {1..20}; do
+for i in {1..40}; do
   if curl -s --max-time 1 "${BASE_URL}/api/status" >/dev/null 2>&1; then
     echo "HomeAuto server is online!"
     break
@@ -67,6 +74,7 @@ exec $CHROMIUM_BIN \
   --kiosk \
   --noerrdialogs \
   --disable-infobars \
+  --autoplay-policy=no-user-gesture-required \
   --disable-session-crashed-bubble \
   --disable-features=Translate,OptimizationHints,MediaRouter \
   --check-for-update-interval=31536000 \

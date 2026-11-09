@@ -19,10 +19,42 @@ class MediaPlayer:
         self.current_title: str = ""
         self.current_url: str = ""
         self.current_direct: bool = False
+        self.stream_url: str = ""
         self.is_playing: bool = False
         self.volume: int = self.config.volume
         self._mpv_process: Optional[subprocess.Popen] = None
         self._mpv_lock = threading.Lock()  # concurrent play() calls must never leave two mpv running
+
+    def _resolve_stream_url(self, url: str, direct: bool = False) -> str:
+        """Resolves direct HTTP playable stream URL for browser/client audio output."""
+        clean_url = url.strip()
+        if direct or (clean_url.startswith("http://") or clean_url.startswith("https://")) and "youtube.com" not in clean_url and "youtu.be" not in clean_url and not clean_url.startswith("ytdl://"):
+            return clean_url
+        
+        try:
+            import yt_dlp
+            ydl_opts = {
+                'format': 'bestaudio/best',
+                'quiet': True,
+                'no_warnings': True,
+                'noplaylist': True,
+                'extract_flat': False
+            }
+            target = clean_url
+            if target.startswith("ytdl://"):
+                target = target.replace("ytdl://", "")
+            if not target.startswith("http://") and not target.startswith("https://"):
+                target = f"ytsearch1:{target}"
+            
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(target, download=False)
+                if info:
+                    if 'entries' in info and info['entries']:
+                        info = info['entries'][0]
+                    return info.get('url') or clean_url
+        except Exception as e:
+            logger.debug(f"yt-dlp stream extraction fallback: {e}")
+        return clean_url
 
     def _get_audio_env(self) -> Dict[str, str]:
         env = os.environ.copy()
@@ -65,7 +97,7 @@ class MediaPlayer:
         self.volume = self.config.volume
 
     async def play(self, url_or_preset: str, title: Optional[str] = None, direct: bool = False) -> bool:
-        """Plays a YouTube stream (or, with direct=True, a plain radio stream URL) via mpv with Pulse/PipeWire audio routing."""
+        """Plays audio either locally on server via mpv or prepares HTTP stream URL for browser/thin client."""
         self.stop()
         
         # Check matching preset title if not provided
@@ -80,7 +112,14 @@ class MediaPlayer:
         self.current_direct = direct
         self.is_playing = True
 
-        if shutil.which("mpv"):
+        loop = asyncio.get_event_loop()
+        # Resolve HTTP stream URL (in thread pool to avoid blocking async loop)
+        self.stream_url = await loop.run_in_executor(None, self._resolve_stream_url, url_or_preset, direct)
+
+        output_mode = getattr(self.config, "output_mode", "auto")
+        should_run_mpv = (output_mode == "server") or (output_mode == "auto" and shutil.which("mpv"))
+
+        if should_run_mpv and shutil.which("mpv"):
             def _start_mpv_unlocked():
                 try:
                     env = self._get_audio_env()
@@ -156,11 +195,13 @@ class MediaPlayer:
         return True
 
     def pause(self):
-        """Toggles pause on active MPV playback."""
-        if self._send_ipc_command(["cycle", "pause"]):
+        """Toggles pause on active playback."""
+        if self._mpv_process and self._send_ipc_command(["cycle", "pause"]):
             self.is_playing = not self.is_playing
         else:
-            self.stop()
+            self.is_playing = not self.is_playing
+            if not self.is_playing and self._mpv_process:
+                self.stop()
 
     def stop(self):
         """Stops active MPV playback process."""
@@ -198,6 +239,8 @@ class MediaPlayer:
             "title": self.current_title,
             "url": self.current_url,
             "direct": self.current_direct,
+            "stream_url": self.stream_url,
             "volume": self.volume,
+            "output_mode": getattr(self.config, "output_mode", "auto"),
             "presets": [p.model_dump() for p in self.config.preset_streams]
         }

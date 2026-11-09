@@ -495,6 +495,7 @@ async function saveFullConfig() {
       use_unsplash_random: document.getElementById("ss-unsplash").checked,
       youtube_audio: {
         enabled: true,
+        output_mode: adminConfig?.screensaver?.youtube_audio?.output_mode || "auto",
         auto_play_on_screensaver: document.getElementById("ss-yt-autoplay").checked,
         volume: parseInt(document.getElementById("ss-yt-vol").value || "50"),
         preset_streams: adminConfig?.screensaver?.youtube_audio?.preset_streams || []

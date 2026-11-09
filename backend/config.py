@@ -52,6 +52,7 @@ class YouTubeAudioConfig(BaseModel):
     enabled: bool = True
     auto_play_on_screensaver: bool = False
     volume: int = 50
+    output_mode: str = "auto" # "auto", "server" (host mpv/pulseaudio), or "browser" (HTTP/HTML5 audio on client)
     preset_streams: List[YouTubeAudioPreset] = Field(default_factory=list)
 
 class ScreensaverWidgetsConfig(BaseModel):
@@ -80,6 +81,7 @@ class ServerConfig(BaseModel):
     host: str = "0.0.0.0"
     port: int = 80
     debug: bool = False
+    allow_remote_admin: bool = True # Allow LAN clients (e.g. remote Pi touchscreen) to execute Pi/admin actions
 
 class AppConfig(BaseModel):
     server: ServerConfig = Field(default_factory=ServerConfig)

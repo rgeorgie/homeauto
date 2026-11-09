@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  homeauto:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homeauto-server
+    restart: unless-stopped
+    # host networking enables local Tuya UDP broadcast discovery across your LAN
+    network_mode: host
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TZ=UTC
+    volumes:
+      # Mount configuration and customizable assets
+      - ./config.yaml:/app/config.yaml
+      - ./frontend/assets/photos:/app/frontend/assets/photos:ro
+      - ./frontend/assets/fireplace:/app/frontend/assets/fireplace:ro
+      - ./radio_favorites.json:/app/radio_favorites.json

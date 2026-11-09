@@ -433,6 +433,61 @@ function playPresetStream(index) {
   }
 }
 
+let clientAudioElement = null;
+
+function getClientAudioElement() {
+  if (!clientAudioElement) {
+    clientAudioElement = document.getElementById("client-audio-player");
+    if (!clientAudioElement) {
+      clientAudioElement = document.createElement("audio");
+      clientAudioElement.id = "client-audio-player";
+      clientAudioElement.preload = "none";
+      clientAudioElement.style.display = "none";
+      document.body.appendChild(clientAudioElement);
+    }
+  }
+  return clientAudioElement;
+}
+
+function syncClientAudio(media) {
+  if (!media) return;
+  // If output_mode is explicitly 'server', server MPV handles playback on server host
+  if (media.output_mode === "server") {
+    if (clientAudioElement) {
+      clientAudioElement.pause();
+      clientAudioElement.src = "";
+    }
+    return;
+  }
+
+  // In 'browser' or 'auto' mode (HTTP audio streaming on client device)
+  const audio = getClientAudioElement();
+  const streamUrl = media.stream_url || (media.url && (media.direct || media.url.startsWith("http")) ? media.url : "");
+
+  if (media.volume !== undefined) {
+    audio.volume = Math.max(0, Math.min(1, media.volume / 100));
+  }
+
+  if (media.is_playing && streamUrl) {
+    if (audio.dataset.currentStream !== streamUrl) {
+      audio.dataset.currentStream = streamUrl;
+      audio.src = streamUrl;
+      audio.play().catch(err => {
+        console.debug("Browser audio autoplay pending user gesture or starting:", err);
+      });
+    } else if (audio.paused) {
+      audio.play().catch(() => {});
+    }
+  } else {
+    if (!audio.paused) {
+      audio.pause();
+    }
+    if (!media.is_playing) {
+      audio.dataset.currentStream = "";
+    }
+  }
+}
+
 function renderMediaStatus(media) {
   const titleEl = document.getElementById("media-track-title");
   const statusEl = document.getElementById("media-play-status");
@@ -444,6 +499,7 @@ function renderMediaStatus(media) {
   if (toggleBtn) toggleBtn.textContent = media.is_playing ? "⏸ Pause" : "▶ Play";
   if (volSlider && media.volume !== undefined) volSlider.value = media.volume;
 
+  syncClientAudio(media);
   renderBannerRadio();
 
   // Screensaver: show what is playing (hidden when nothing plays)

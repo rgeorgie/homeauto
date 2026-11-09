@@ -78,6 +78,30 @@ The script will:
 
 ---
 
+## 🐳 Option 2: Docker Headless Server (x86 / Server) + Remote Pi Kiosk
+
+You can run HomeAuto headless on an **x86 server, NAS, or PC** via Docker, while the **screen and audio** run on a separate Raspberry Pi connected over HTTP.
+
+### 1. Run Backend on x86 Server (Docker)
+```bash
+# 1. Create your config.yaml
+cp config.example.yaml config.yaml
+
+# 2. Build and start container
+docker compose up -d
+```
+
+### 2. Connect Raspberry Pi Screen & Audio (HTTP)
+On the Raspberry Pi running the touchscreen:
+```bash
+# Launch kiosk pointing to your x86 server IP:
+HOMEAUTO_SERVER="http://<X86_SERVER_IP>:80" ./kiosk.sh
+```
+- **Display**: Chromium renders the full interactive dashboard and ambient screensaver.
+- **Sound**: Radio stations and background streams play natively inside the Pi's browser (HTML5 audio) through the Pi's HDMI, 3.5mm jack, or connected Bluetooth speaker.
+
+---
+
 ## ⚙️ Configuration (`config.yaml`)
 
 Copy `config.example.yaml` to `config.yaml` and configure your devices:
