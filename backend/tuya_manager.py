@@ -1136,10 +1136,10 @@ class TuyaManager:
     async def set_device_power(self, dev_id: str, is_on: bool, channel: int = 1) -> bool:
         """Toggles power for a device (or one line of a multi-line switch)."""
         dev = self.local_devices.get(dev_id)
-        if not dev:
-            # Fallback to cloud if configured
-            success = await self._set_cloud_power(dev_id, is_on, channel)
-        else:
+        success = False
+
+        # 1. Attempt local socket control if device is registered locally and mode allows local
+        if dev and self.config.mode != "cloud":
             def _set_power():
                 try:
                     # Single-line devices: no `switch` argument (BulbDevice auto-detects its DP). Multi-line devices: always name the line
@@ -1148,16 +1148,25 @@ class TuyaManager:
                     line_dp = dp_map.get(channel, channel)
                     kwargs = {"switch": line_dp} if line_dp > 1 or multi else {}
                     if is_on:
-                        dev.turn_on(**kwargs)
+                        res = dev.turn_on(**kwargs)
                     else:
-                        dev.turn_off(**kwargs)
+                        res = dev.turn_off(**kwargs)
+                    if isinstance(res, dict) and ("Error" in res or "Err" in res):
+                        logger.warning(f"Local power command failed for {dev_id}: {res}")
+                        return False
                     return True
                 except Exception as e:
-                    logger.error(f"Error setting power for {dev_id} line {channel}: {e}")
+                    logger.error(f"Error setting local power for {dev_id} line {channel}: {e}")
                     return False
 
             loop = asyncio.get_event_loop()
             success = await loop.run_in_executor(None, _set_power)
+
+        # 2. Fallback to Tuya Cloud API if local command failed or device is not local
+        if not success and self.cloud_api:
+            logger.info(f"Attempting Tuya Cloud power fallback for {dev_id}...")
+            success = await self._set_cloud_power(dev_id, is_on, channel)
+
         if success and dev_id in self.device_states:
             st = self.device_states[dev_id]
             channels = st.get("channels") or []
@@ -1168,8 +1177,7 @@ class TuyaManager:
                 st["is_on"] = any(ch["is_on"] for ch in channels)
             else:
                 st["is_on"] = is_on
-            if dev:
-                st["online"] = True
+            st["online"] = True
         return success
 
     async def test_connection(self, dev_id: str, ip: str, local_key: str, version: float = 3.3) -> Dict[str, Any]:
@@ -1662,26 +1670,47 @@ class TuyaManager:
     async def set_device_brightness(self, dev_id: str, brightness: int) -> bool:
         """Sets brightness (0-100 or 0-1000)."""
         dev = self.local_devices.get(dev_id)
-        if not dev:
-            return False
+        success = False
 
-        def _set_bright():
-            try:
-                if isinstance(dev, tinytuya.BulbDevice):
-                    dev.set_brightness_percentage(brightness)
-                else:
-                    # Generic DPS for dimmer/smart bulb
-                    dev.set_value(22, brightness)
-                return True
-            except Exception as e:
-                logger.error(f"Error setting brightness for {dev_id}: {e}")
-                return False
+        if dev and self.config.mode != "cloud":
+            def _set_bright():
+                try:
+                    if isinstance(dev, tinytuya.BulbDevice):
+                        res = dev.set_brightness_percentage(brightness)
+                    else:
+                        # Generic DPS for dimmer/smart bulb
+                        res = dev.set_value(22, brightness)
+                    if isinstance(res, dict) and ("Error" in res or "Err" in res):
+                        return False
+                    return True
+                except Exception as e:
+                    logger.error(f"Error setting local brightness for {dev_id}: {e}")
+                    return False
 
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(None, _set_bright)
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, _set_bright)
+
+        # Fallback to cloud if local failed
+        if not success and self.cloud_api:
+            def _cloud_bright():
+                try:
+                    val_1000 = int(round(brightness * 10))
+                    for code, val in [("bright_value", val_1000), ("bright_value_v2", val_1000), ("brightness", brightness)]:
+                        res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": [{"code": code, "value": val}]})
+                        if res and res.get("success"):
+                            return True
+                    return False
+                except Exception as e:
+                    logger.error(f"Error setting cloud brightness for {dev_id}: {e}")
+                    return False
+
+            loop = asyncio.get_event_loop()
+            success = await loop.run_in_executor(None, _cloud_bright)
+
         if success:
             if dev_id in self.device_states:
                 self.device_states[dev_id]["brightness"] = brightness
+                self.device_states[dev_id]["online"] = True
         return success
 
     async def _set_cloud_power(self, dev_id: str, is_on: bool, channel: int = 1) -> bool:
@@ -1690,15 +1719,29 @@ class TuyaManager:
         
         def _send():
             try:
-                # DP 1-6 are switch_1..6; the USB block of a power strip is DP 7+ (switch_usb1..)
                 st = self.device_states.get(dev_id) or {}
-                if (st.get("category") or "").lower() == "kt" or st.get("type") == "ac":
-                    code = "switch"  # air conditioners use a single `switch` code
+                category = (st.get("category") or "").lower()
+                dev_type = (st.get("type") or "").lower()
+
+                # Build candidate codes in priority order
+                candidate_codes = []
+                if category == "kt" or dev_type == "ac":
+                    candidate_codes = ["switch", "switch_1"]
+                elif dev_type in ["light", "bulb", "dj"]:
+                    candidate_codes = [f"switch_led_{channel}" if channel > 1 else "switch_led", f"switch_{channel}" if channel > 1 else "switch_1", "switch"]
+                elif channel > 1:
+                    candidate_codes = [f"switch_{channel}" if channel <= 6 else f"switch_usb{channel - 6}"]
                 else:
-                    code = f"switch_{channel}" if channel <= 6 else f"switch_usb{channel - 6}"
-                commands = [{"code": code, "value": is_on}]
-                res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
-                return bool(res and res.get("success"))
+                    candidate_codes = ["switch_1", "switch", "switch_led", "power"]
+
+                for code in candidate_codes:
+                    commands = [{"code": code, "value": is_on}]
+                    res = self.cloud_api.post(f"/v1.0/devices/{dev_id}/commands", {"commands": commands})
+                    if res and res.get("success"):
+                        logger.info(f"Cloud command succeeded for {dev_id} using code '{code}'")
+                        return True
+
+                return False
             except Exception as e:
                 logger.error(f"Error sending cloud power command to {dev_id}: {e}")
                 return False
