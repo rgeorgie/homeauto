@@ -86,6 +86,9 @@
         </div>
       </div>
 
+      <!-- Floor Plan (read-only, shown when a plan has been drawn) -->
+      <div id="dashboard-floorplan" style="display: none; margin-bottom: 24px;"></div>
+
       <!-- Quick Cards Grid -->
       <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
         <h3 style="font-size: 18px; color: var(--text-muted);">Quick Device Controls</h3>
@@ -372,6 +375,7 @@
       <!-- Admin Sub-Navigation Tabs -->
       <div class="admin-tabs">
         <button class="admin-tab-btn active" data-tab="devices">💡 SmartLife / Tuya Devices</button>
+        <button class="admin-tab-btn" data-tab="floorplan">🗺️ Floor Plan</button>
         <button class="admin-tab-btn" data-tab="bluetooth">🔊 Bluetooth Surround</button>
         <button class="admin-tab-btn" data-tab="kodi">🎬 Kodi Integration</button>
         <button class="admin-tab-btn" data-tab="screensaver">🖼️ Screensaver & Audio</button>
@@ -466,6 +470,33 @@
             <button class="action-btn" id="btn-sync-cloud-keys" type="button" style="background: linear-gradient(135deg, #3b82f6, #1d4ed8);">
               🔑 Fetch &amp; Sync All Cloud Keys
             </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB: FLOOR PLAN -->
+      <div id="admin-subview-floorplan" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Floor Plan</div>
+              <div class="card-subtitle">Draw rooms (named after your device rooms), then place devices inside them</div>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <select id="floorplan-room-select" class="form-select" style="width: auto; min-width: 180px;"></select>
+              <button class="action-btn" id="btn-floorplan-save" type="button">💾 Save Floor Plan</button>
+              <button class="action-btn" id="btn-floorplan-clear" type="button" style="background: rgba(255,255,255,0.08);">Clear Plan</button>
+            </div>
+          </div>
+          <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
+            Drag on the plan to draw a room for the selected room name. Click a device chip, then click the plan to place it. Drag a device to move it; drag a room's corner handle to resize it.
+          </p>
+          <div style="display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 16px;">
+            <div id="floorplan-editor" class="floorplan-canvas"></div>
+            <div>
+              <div class="card-subtitle" style="margin-bottom: 8px;">Unplaced devices</div>
+              <div id="floorplan-unplaced" class="floorplan-device-list"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -1101,6 +1132,7 @@
   <!-- Scripts -->
   <script src="/js/app.js"></script>
   <script src="/js/tuya_cards.js"></script>
+  <script src="/js/floorplan.js"></script>
   <script src="/js/camera.js"></script>
   <script src="/js/push_history.js"></script>
   <script src="/js/screensaver.js"></script>

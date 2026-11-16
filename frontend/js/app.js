@@ -20,6 +20,8 @@ document.addEventListener("DOMContentLoaded", () => {
   initKodiController();
   initBluetoothController();
   initTuyaCards();
+  initFloorplanEditor();
+  loadFloorplan();
 });
 
 // Drag-to-scroll fallback: some touchscreens reach the browser as a mouse, so a swipe
@@ -39,7 +41,7 @@ function initDragScroll() {
 
   document.addEventListener("pointerdown", (e) => {
     if (e.pointerType !== "mouse" || e.button !== 0) return;
-    if (e.target.closest("input, select, textarea, .touch-slider")) return;
+    if (e.target.closest("input, select, textarea, .touch-slider, .floorplan-canvas, .floorplan-device")) return;
     drag = { x: e.clientX, y: e.clientY, target: scrollableParent(e.target), moved: false,
              left: 0, top: 0 };
     drag.left = drag.target.scrollLeft;
@@ -133,6 +135,8 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === "state_update" || msg.type === "initial_state") {
           applyStateUpdate(msg.data);
+        } else if (msg.type === "floorplan_updated") {
+          onFloorplanUpdated(msg.data);
         } else if (msg.type === "camera_event" && typeof onCameraEvent === "function") {
           onCameraEvent(msg.data);
         } else if (msg.type === "push_event" && typeof onPushEvent === "function") {
@@ -173,6 +177,7 @@ function applyStateUpdate(data) {
     renderTuyaDevices(state.devices);
     if (typeof checkDoorbellRings === "function") checkDoorbellRings(state.devices);
     updateAmbientDeviceSummary(state.devices);
+    onFloorplanStateUpdate();
   }
   if (data.bluetooth) {
     state.bluetooth = data.bluetooth;

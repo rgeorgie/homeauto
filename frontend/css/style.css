@@ -769,3 +769,81 @@ body {
 .sensor-readings { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 16px; }
 .sensor-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: var(--text-muted); }
 .sensor-value { font-size: 26px; font-weight: 700; margin-top: 2px; }
+
+/* Floor plan (admin editor + dashboard view) */
+.floorplan-canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  background: var(--bg-secondary);
+  border: 1px dashed var(--border-color);
+  border-radius: 12px;
+  overflow: hidden;
+  touch-action: none;
+  user-select: none;
+}
+.floorplan-canvas.readonly { touch-action: auto; }
+.floorplan-room {
+  position: absolute;
+  box-sizing: border-box;
+  background: rgba(59, 130, 246, 0.14);
+  border: 2px solid rgba(59, 130, 246, 0.6);
+  border-radius: 6px;
+  pointer-events: none;
+}
+.floorplan-room-draft { background: rgba(59, 130, 246, 0.08); border-style: dashed; }
+.floorplan-room-label {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.floorplan-resize-handle {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 16px;
+  height: 16px;
+  background: var(--accent-blue);
+  border-radius: 4px;
+  cursor: nwse-resize;
+  pointer-events: auto;
+}
+.floorplan-device {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  max-width: 140px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: 999px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  cursor: grab;
+  touch-action: none;
+}
+.floorplan-device.on { border-color: var(--accent-green); box-shadow: 0 0 10px rgba(16, 185, 129, 0.45); }
+.floorplan-device.off { color: var(--text-muted); }
+.floorplan-device.offline { opacity: 0.45; border-style: dashed; }
+.floorplan-canvas.readonly .floorplan-device { cursor: default; }
+.floorplan-device-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
+.floorplan-chip {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 13px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-main);
+  cursor: pointer;
+}
+.floorplan-chip.active { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.2); }
+.floorplan-empty { font-size: 13px; color: var(--text-muted); }

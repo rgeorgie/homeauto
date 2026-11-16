@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse, JSONResponse, Response, StreamingRes
 import requests
 
 from backend.config import load_config, save_config, get_raw_config, save_raw_config, AppConfig
+from backend.floorplan import FloorPlan, get_floorplan, save_floorplan
 from backend.tuya_manager import TuyaManager
 from backend.bt_audio_manager import BluetoothAudioManager
 from backend.kodi_manager import KodiManager
@@ -923,6 +924,16 @@ async def delete_config_device(device_id: str):
         }
     })
     return {"status": "ok", "devices": [d.model_dump() for d in config.tuya.devices]}
+
+@app.get("/api/floorplan")
+async def read_floorplan():
+    return get_floorplan().model_dump()
+
+@app.put("/api/floorplan")
+async def write_floorplan(plan: FloorPlan = Body(...)):
+    save_floorplan(plan)
+    await ws_manager.broadcast({"type": "floorplan_updated", "data": plan.model_dump()})
+    return {"status": "ok"}
 
 # Frontend Static Files Mount
 frontend_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "frontend")
