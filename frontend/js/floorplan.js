@@ -365,7 +365,8 @@ function floorplanItemEl(pt, pos) {
   }
   if (pt.channel !== null || pt.isSwitch) {
     // Lamp or vent icon, chosen before placing, with the on/off state as the color
-    el.className = `floorplan-device ${pt.isOn ? "on" : (dev.online ? "off" : "offline")}`;
+    const lampKind = (pos.kind || "lamp") === "lamp";
+    el.className = `floorplan-device ${pt.isOn ? "on" : (dev.online ? "off" : "offline")}${lampKind && pt.isOn ? " lamp-on" : ""}`;
     el.textContent = PLAN_KIND_ICON[pos.kind || "lamp"];
     return el;
   }

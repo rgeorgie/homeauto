@@ -831,6 +831,8 @@ body {
   touch-action: none;
 }
 .floorplan-device.on { border-color: var(--accent-green); box-shadow: 0 0 10px rgba(16, 185, 129, 0.45); }
+/* Lamp that is on: a soft light halo around the icon */
+.floorplan-device.lamp-on { box-shadow: 0 0 6px 2px rgba(250, 204, 21, 0.55), 0 0 22px 10px rgba(250, 204, 21, 0.3); }
 .floorplan-device.off { color: var(--text-muted); }
 .floorplan-device.offline { opacity: 0.45; border-style: dashed; }
 .floorplan-canvas.readonly .floorplan-device { cursor: default; }
