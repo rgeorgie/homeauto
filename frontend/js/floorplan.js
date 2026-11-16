@@ -42,8 +42,27 @@ function homeDevices() {
   return (state.devices || []).filter(d => d.home === home);
 }
 
+// Placeable items. A plain device is one point; each channel of a multi-gang switch is its own point
+// (e.g. "Light Living room · Line 1" and "· Line 2") so each can be placed and shown as a lamp.
+// Point key: device id, or "device id#channel index" for a channel.
+function homePoints() {
+  const points = [];
+  homeDevices().forEach(dev => {
+    const channels = Array.isArray(dev.channels) ? dev.channels : [];
+    if (channels.length > 1) {
+      channels.forEach(ch => points.push({
+        key: `${dev.id}#${ch.index}`, dev, channel: ch.index,
+        name: `${dev.name} · ${ch.label || "Line " + ch.index}`, isOn: !!ch.is_on
+      }));
+    } else {
+      points.push({ key: dev.id, dev, channel: null, name: dev.name, isOn: !!dev.is_on });
+    }
+  });
+  return points;
+}
+
 function floorplanDeviceSignature() {
-  return `${currentHomeName()}#` + homeDevices().map(d => `${d.id}|${d.name}|${d.room}`).join(";");
+  return `${currentHomeName()}#` + homeDevices().map(d => `${d.id}|${d.name}|${d.room}|${(d.channels || []).length}`).join(";");
 }
 
 function floorplanRoomNames() {
@@ -260,27 +279,27 @@ function renderFloorplanEditor() {
     canvas.appendChild(el);
   });
 
-  homeDevices().forEach(dev => {
-    const pos = plan.devices[dev.id];
+  homePoints().forEach(pt => {
+    const pos = plan.devices[pt.key];
     if (!pos) return;
-    canvas.appendChild(createPlacedDeviceEl(canvas, dev, pos));
+    canvas.appendChild(createPlacedDeviceEl(canvas, pt, pos));
   });
 
   renderUnplacedDevices();
 }
 
-function createPlacedDeviceEl(canvas, dev, pos) {
+function createPlacedDeviceEl(canvas, pt, pos) {
   const el = document.createElement("div");
-  el.className = `floorplan-device ${floorplanDeviceStateClass(dev)}`;
-  el.textContent = dev.name;
-  el.title = dev.name;
+  el.className = `floorplan-device ${pt.isOn ? "on" : (pt.dev.online ? "off" : "offline")}`;
+  el.textContent = pt.name;
+  el.title = pt.name;
   el.style.left = `${pos.x * 100}%`;
   el.style.top = `${pos.y * 100}%`;
-  el.addEventListener("pointerdown", (e) => startMoveDevice(e, canvas, dev.id, el));
+  el.addEventListener("pointerdown", (e) => startMoveDevice(e, canvas, pt.key, el));
   return el;
 }
 
-function startMoveDevice(e, canvas, devId, el) {
+function startMoveDevice(e, canvas, key, el) {
   if (e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
@@ -289,7 +308,7 @@ function startMoveDevice(e, canvas, devId, el) {
   canvas.setPointerCapture(e.pointerId);
   const move = (ev) => {
     const p = toPlanCoords(canvas, ev);
-    plan.devices[devId] = { x: p.x, y: p.y };
+    plan.devices[key] = { x: p.x, y: p.y };
     el.style.left = `${p.x * 100}%`;
     el.style.top = `${p.y * 100}%`;
   };
@@ -330,7 +349,7 @@ function renderUnplacedDevices() {
   const list = document.getElementById("floorplan-unplaced");
   if (!list) return;
   const plan = currentHomePlan();
-  const unplaced = homeDevices().filter(d => !(plan && plan.devices[d.id]));
+  const unplaced = homePoints().filter(pt => !(plan && plan.devices[pt.key]));
   if (unplaced.length === 0) {
     const empty = document.createElement("div");
     empty.className = "floorplan-empty";
@@ -338,13 +357,13 @@ function renderUnplacedDevices() {
     list.replaceChildren(empty);
     return;
   }
-  list.replaceChildren(...unplaced.map(dev => {
+  list.replaceChildren(...unplaced.map(pt => {
     const chip = document.createElement("button");
     chip.type = "button";
-    chip.className = "floorplan-chip" + (floorplanPendingDeviceId === dev.id ? " active" : "");
-    chip.textContent = `${dev.name}${dev.room ? ` · ${dev.room}` : ""}`;
+    chip.className = "floorplan-chip" + (floorplanPendingDeviceId === pt.key ? " active" : "");
+    chip.textContent = `${pt.name}${pt.dev.room ? ` · ${pt.dev.room}` : ""}`;
     chip.addEventListener("click", () => {
-      floorplanPendingDeviceId = floorplanPendingDeviceId === dev.id ? null : dev.id;
+      floorplanPendingDeviceId = floorplanPendingDeviceId === pt.key ? null : pt.key;
       renderUnplacedDevices();
     });
     return chip;
@@ -376,16 +395,23 @@ function renderDashboardFloorplan() {
     el.appendChild(label);
     canvas.appendChild(el);
   });
-  homeDevices().forEach(dev => {
-    const pos = plan.devices[dev.id];
+  homePoints().forEach(pt => {
+    const pos = plan.devices[pt.key];
     if (!pos) return;
     const el = document.createElement("div");
-    el.className = `floorplan-device ${floorplanDeviceStateClass(dev)}`;
-    el.textContent = floorplanDeviceLabel(dev);
-    el.title = dev.name;
+    el.className = `floorplan-device ${pt.isOn ? "on" : (pt.dev.online ? "off" : "offline")}`;
+    el.textContent = pt.channel !== null ? `💡 ${pt.name}` : floorplanDeviceLabel(pt.dev);
+    el.title = pt.name;
     el.style.left = `${pos.x * 100}%`;
     el.style.top = `${pos.y * 100}%`;
-    el.addEventListener("click", () => openFloorDevice(dev.id));
+    el.addEventListener("click", () => {
+      if (pt.channel !== null) {
+        // A channel is a lamp: tap toggles it directly
+        toggleDevicePower(pt.dev.id, !pt.isOn, pt.channel);
+      } else {
+        openFloorDevice(pt.dev.id);
+      }
+    });
     canvas.appendChild(el);
   });
   container.replaceChildren(canvas);
