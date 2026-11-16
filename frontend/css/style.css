@@ -792,6 +792,9 @@ body {
   pointer-events: none;
 }
 .floorplan-room-draft { background: rgba(59, 130, 246, 0.08); border-style: dashed; }
+/* Dashboard: rooms are tappable to show their devices below the plan */
+.floorplan-canvas.readonly .floorplan-room { pointer-events: auto; cursor: pointer; }
+.floorplan-canvas.readonly .floorplan-room.selected { background: rgba(59, 130, 246, 0.3); border-color: var(--accent-blue, #3b82f6); }
 .floorplan-room-label {
   position: absolute;
   top: 6px;

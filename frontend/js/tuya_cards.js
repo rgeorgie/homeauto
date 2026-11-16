@@ -272,7 +272,6 @@ function buildRoomGroupsHtml(devices) {
 
 function renderTuyaDevices(allDevices) {
   const grid = document.getElementById("devices-grid");
-  const quickGrid = document.getElementById("quick-devices-grid");
   if (!grid) return;
 
   const selectedHome = updateHomeFilters(allDevices || []);
@@ -287,13 +286,12 @@ function renderTuyaDevices(allDevices) {
       <div style="font-size: 16px; font-weight: 600; color: #fff; margin-bottom: 4px;">No SmartLife / Tuya Devices Displayed Yet</div>
       <div>Click <strong>"🔍 Scan Local Devices"</strong> above to auto-discover your devices and add them to the screen!</div>
     </div>`;
-    if (quickGrid) quickGrid.innerHTML = grid.innerHTML;
+    renderDashboardRoomDevices();
     return;
   }
 
-  const html = buildRoomGroupsHtml(devices);
-  grid.innerHTML = html;
-  if (quickGrid) quickGrid.innerHTML = html;
+  grid.innerHTML = buildRoomGroupsHtml(devices);
+  renderDashboardRoomDevices();
 
   bindDeviceControls(devices);
 }

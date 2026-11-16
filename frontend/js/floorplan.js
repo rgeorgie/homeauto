@@ -495,6 +495,28 @@ function renderUnplacedDevices() {
 
 // ---------------- Dashboard (read-only) ----------------
 
+// Room selected on the dashboard plan. Its device cards are listed under the plan; null shows only the plan.
+let dashboardRoomName = null;
+
+// Under the dashboard plan: the cards of the selected room only. Hidden when no room is selected.
+function renderDashboardRoomDevices() {
+  const list = document.getElementById("quick-devices-grid");
+  if (!list) return;
+  const plan = currentHomePlan();
+  const room = dashboardRoomName && plan && plan.rooms.some(r => r.name === dashboardRoomName) ? dashboardRoomName : null;
+  dashboardRoomName = room;
+  if (!room) {
+    list.replaceChildren();
+    return;
+  }
+  const devs = homeDevices().filter(d => (d.room || "").trim() === room);
+  list.innerHTML = `<div class="room-group">
+    <div class="room-group-title">${escapeHtml(room)} <span style="opacity: 0.6;">(${devs.length})</span></div>
+    <div class="dashboard-grid">${devs.sort((a, b) => a.name.localeCompare(b.name)).map(d => createDeviceCardHtml(d)).join("")}</div>
+  </div>`;
+  bindDeviceControls(devs);
+}
+
 function renderDashboardFloorplan() {
   const container = document.getElementById("dashboard-floorplan");
   if (!container) return;
@@ -502,15 +524,29 @@ function renderDashboardFloorplan() {
   if (!plan || plan.rooms.length === 0) {
     container.style.display = "none";
     container.replaceChildren();
+    dashboardRoomName = null;
+    renderDashboardRoomDevices();
     return;
   }
   container.style.display = "";
 
   const canvas = document.createElement("div");
   canvas.className = "floorplan-canvas readonly";
+  canvas.addEventListener("click", (e) => {
+    // Clicking empty plan area clears the room selection
+    if (e.target === canvas) {
+      dashboardRoomName = null;
+      renderDashboardRoomDevices();
+    }
+  });
   plan.rooms.forEach(room => {
     const el = document.createElement("div");
     el.className = "floorplan-room";
+    if (dashboardRoomName === room.name) el.classList.add("selected");
+    el.addEventListener("click", () => {
+      dashboardRoomName = dashboardRoomName === room.name ? null : room.name;
+      renderDashboardFloorplan();
+    });
     positionBox(el, room);
     const label = document.createElement("div");
     label.className = "floorplan-room-label";
@@ -524,7 +560,8 @@ function renderDashboardFloorplan() {
     const el = floorplanItemEl(pt, pos);
     el.style.left = `${pos.x * 100}%`;
     el.style.top = `${pos.y * 100}%`;
-    el.addEventListener("click", () => {
+    el.addEventListener("click", (e) => {
+      e.stopPropagation();
       if (pt.channel !== null) {
         // A channel is a relay: tap toggles it directly
         toggleDevicePower(pt.dev.id, !pt.isOn, pt.channel);
@@ -538,6 +575,7 @@ function renderDashboardFloorplan() {
     canvas.appendChild(el);
   });
   container.replaceChildren(canvas);
+  renderDashboardRoomDevices();
 }
 
 // Room label: the room name plus a temperature from a sensor or thermostat placed in that room
