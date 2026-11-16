@@ -1035,6 +1035,17 @@
       <div id="camera-controls-panel" style="display: none; margin-top: 16px; border-top: 1px solid var(--border-color); padding-top: 14px; max-height: 38vh; overflow-y: auto;"></div>
     </div>
   </div>
+  <!-- Floor plan device popup: the same card as the device list, opened from a placed device -->
+  <div id="modal-floor-device" class="modal-overlay" style="display: none;">
+    <div class="modal-content" style="max-width: 460px;">
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 6px;">
+        <button id="btn-floor-device-close" style="background: none; border: none; color: #fff; font-size: 22px; cursor: pointer;">&times;</button>
+      </div>
+      <div id="floor-device-body"></div>
+    </div>
+  </div>
+
+
 
   <!-- Discovered Devices Modal (Scan Results) -->
   <div id="modal-scan-results" class="modal-overlay" style="display: none;">

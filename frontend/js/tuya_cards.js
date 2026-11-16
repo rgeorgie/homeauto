@@ -295,7 +295,12 @@ function renderTuyaDevices(allDevices) {
   grid.innerHTML = html;
   if (quickGrid) quickGrid.innerHTML = html;
 
-  // Bind event listeners for toggles, sliders, and climate steppers
+  bindDeviceControls(devices);
+}
+
+// Wires the controls of device cards already in the DOM (toggles, sliders, steppers, feed).
+// Used by the device list and by the floor plan popup, so both share the same behavior.
+function bindDeviceControls(devices) {
   devices.forEach(dev => {
     // Power Toggle
     const toggleBtn = document.querySelectorAll(`.device-toggle-btn[data-id="${dev.id}"]`);

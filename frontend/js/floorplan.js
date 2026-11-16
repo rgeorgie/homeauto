@@ -5,6 +5,7 @@ let floorplan = { homes: {} };
 let floorplanEditorInitialized = false;
 let floorplanPendingDeviceId = null;
 let floorplanEditorSignature = "";
+let floorDeviceOpenId = null; // device whose card is open in the popup
 
 const FLOORPLAN_MIN_SIZE = 0.03;
 
@@ -76,6 +77,7 @@ async function loadFloorplan() {
 function onFloorplanStateUpdate() {
   if (floorplanDeviceSignature() !== floorplanEditorSignature) renderFloorplanEditor();
   renderDashboardFloorplan();
+  if (floorDeviceOpenId) renderFloorDevice();
 }
 
 function onFloorplanUpdated(data) {
@@ -107,6 +109,7 @@ async function saveFloorplanToServer() {
 function initFloorplanEditor() {
   if (floorplanEditorInitialized) return;
   floorplanEditorInitialized = true;
+  initFloorDeviceModal();
 
   const canvas = document.getElementById("floorplan-editor");
   if (!canvas) return;
@@ -369,7 +372,7 @@ function renderDashboardFloorplan() {
     positionBox(el, room);
     const label = document.createElement("div");
     label.className = "floorplan-room-label";
-    label.textContent = room.name;
+    label.textContent = floorplanRoomLabel(room, plan);
     el.appendChild(label);
     canvas.appendChild(el);
   });
@@ -378,11 +381,68 @@ function renderDashboardFloorplan() {
     if (!pos) return;
     const el = document.createElement("div");
     el.className = `floorplan-device ${floorplanDeviceStateClass(dev)}`;
-    el.textContent = dev.name;
+    el.textContent = floorplanDeviceLabel(dev);
     el.title = dev.name;
     el.style.left = `${pos.x * 100}%`;
     el.style.top = `${pos.y * 100}%`;
+    el.addEventListener("click", () => openFloorDevice(dev.id));
     canvas.appendChild(el);
   });
   container.replaceChildren(canvas);
+}
+
+// Room label: the room name plus a temperature from a sensor or thermostat placed in that room
+function floorplanRoomLabel(room, plan) {
+  const sensor = homeDevices().find(d => plan.devices[d.id] && d.current_temperature != null
+    && (d.room || "").trim() === room.name);
+  return sensor ? `${room.name} · ${parseFloat(sensor.current_temperature).toFixed(1)}°C` : room.name;
+}
+
+// Chip text: the device name plus its current reading, so the plan is useful at a glance
+function floorplanDeviceLabel(dev) {
+  if (!dev.online) return `${dev.name} · offline`;
+  if (dev.contact_open === true || dev.contact_open === false) return `${dev.name} · ${dev.contact_open ? "Open" : "Closed"}`;
+  if (dev.is_motion_sensor || dev.category === "pir") {
+    return `${dev.name} · ${dev.motion === true ? "Motion" : "Clear"}`;
+  }
+  if (dev.current_temperature !== undefined && dev.current_temperature !== null) {
+    const heat = dev.target_temperature !== undefined && dev.target_temperature !== null
+      ? ` → ${parseFloat(dev.target_temperature).toFixed(1)}°C` : "";
+    return `${dev.name} · ${parseFloat(dev.current_temperature).toFixed(1)}°C${heat}`;
+  }
+  if (dev.type === "sensor" || dev.type === "climate" || dev.type === "camera") return dev.name;
+  return `${dev.name} · ${dev.is_on ? "ON" : "OFF"}`;
+}
+
+// ---------------- Device popup (real controls, same as the device list) ----------------
+
+function openFloorDevice(devId) {
+  floorDeviceOpenId = devId;
+  renderFloorDevice();
+  document.getElementById("modal-floor-device").style.display = "flex";
+}
+
+function closeFloorDevice() {
+  floorDeviceOpenId = null;
+  document.getElementById("modal-floor-device").style.display = "none";
+}
+
+// Renders the device's standard card and binds its controls. Called on every state push while open.
+function renderFloorDevice() {
+  const dev = (state.devices || []).find(d => d.id === floorDeviceOpenId);
+  const body = document.getElementById("floor-device-body");
+  if (!body) return;
+  if (!dev) {
+    closeFloorDevice();
+    return;
+  }
+  body.innerHTML = createDeviceCardHtml(dev);
+  bindDeviceControls([dev]);
+}
+
+function initFloorDeviceModal() {
+  document.getElementById("btn-floor-device-close")?.addEventListener("click", closeFloorDevice);
+  document.getElementById("modal-floor-device")?.addEventListener("click", (e) => {
+    if (e.target.id === "modal-floor-device") closeFloorDevice();
+  });
 }
