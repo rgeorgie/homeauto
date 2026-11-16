@@ -63,8 +63,11 @@ function homePoints() {
         name: `${dev.name} · ${ch.label || "Line " + ch.index}`, isOn: !!ch.is_on
       }));
     } else {
+      const switchKind = ["switch", "light", "socket"].includes(deviceKind(dev));
       points.push({ key: dev.id, dev, channel: null, name: dev.name, isOn: !!dev.is_on,
-        isSwitch: ["switch", "light", "socket"].includes(deviceKind(dev)) || (channels.length > 1) });
+        isSwitch: switchKind || (channels.length > 1),
+        // A single-output relay toggles on tap; strips and panels open their card
+        relay: switchKind && channels.length <= 1 });
     }
   });
   return points;
@@ -477,8 +480,11 @@ function renderDashboardFloorplan() {
     el.style.top = `${pos.y * 100}%`;
     el.addEventListener("click", () => {
       if (pt.channel !== null) {
-        // A channel is a switch: tap toggles it directly
+        // A channel is a relay: tap toggles it directly
         toggleDevicePower(pt.dev.id, !pt.isOn, pt.channel);
+      } else if (pt.relay) {
+        // A single-output relay: tap toggles it directly
+        toggleDevicePower(pt.dev.id, !pt.isOn);
       } else {
         openFloorDevice(pt.dev.id);
       }
