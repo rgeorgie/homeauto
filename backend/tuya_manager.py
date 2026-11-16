@@ -6,7 +6,11 @@ import datetime
 import logging
 import asyncio
 from typing import Callable, Dict, Any, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
 import tinytuya
+
+CMD_EXECUTOR = ThreadPoolExecutor(max_workers=10, thread_name_prefix="tuya-cmd")
+POLL_EXECUTOR = ThreadPoolExecutor(max_workers=6, thread_name_prefix="tuya-poll")
 from backend import camera_controls
 
 try:
@@ -437,8 +441,8 @@ class TuyaManager:
         async def _poll_one(dev_id):
             async with sem:
                 try:
-                    await loop.run_in_executor(None, self._sync_poll_device, dev_id)
-                    await loop.run_in_executor(None, self._refresh_feeding_records, dev_id)
+                    await loop.run_in_executor(POLL_EXECUTOR, self._sync_poll_device, dev_id)
+                    await loop.run_in_executor(POLL_EXECUTOR, self._refresh_feeding_records, dev_id)
                 except Exception as e:
                     logger.debug(f"Poll error for {dev_id}: {e}")
 
@@ -618,8 +622,8 @@ class TuyaManager:
                         version=dev_conf.version
                     )
                 device.set_socketPersistent(False)
-                device.set_socketTimeout(3.0)
-                device.set_socketRetryLimit(2)
+                device.set_socketTimeout(1.0)
+                device.set_socketRetryLimit(0)
                 self.local_devices[dev_conf.id] = device
                 logger.info(f"Registered local Tuya device: {dev_conf.name} ({dev_conf.id})")
             else:
@@ -1137,6 +1141,7 @@ class TuyaManager:
         """Toggles power for a device (or one line of a multi-line switch)."""
         dev = self.local_devices.get(dev_id)
         success = False
+        loop = asyncio.get_event_loop()
 
         # 1. Attempt local socket control if device is registered locally and mode allows local
         if dev and self.config.mode != "cloud":
@@ -1159,13 +1164,20 @@ class TuyaManager:
                     logger.error(f"Error setting local power for {dev_id} line {channel}: {e}")
                     return False
 
-            loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, _set_power)
+            try:
+                success = await asyncio.wait_for(loop.run_in_executor(CMD_EXECUTOR, _set_power), timeout=1.2)
+            except asyncio.TimeoutError:
+                logger.warning(f"Local power command timed out after 1.2s for {dev_id}")
+                success = False
 
         # 2. Fallback to Tuya Cloud API if local command failed or device is not local
         if not success and self.cloud_api:
             logger.info(f"Attempting Tuya Cloud power fallback for {dev_id}...")
-            success = await self._set_cloud_power(dev_id, is_on, channel)
+            try:
+                success = await asyncio.wait_for(self._set_cloud_power(dev_id, is_on, channel), timeout=4.0)
+            except asyncio.TimeoutError:
+                logger.error(f"Cloud power command timed out for {dev_id}")
+                success = False
 
         if success and dev_id in self.device_states:
             st = self.device_states[dev_id]
@@ -1688,7 +1700,10 @@ class TuyaManager:
                     return False
 
             loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, _set_bright)
+            try:
+                success = await asyncio.wait_for(loop.run_in_executor(CMD_EXECUTOR, _set_bright), timeout=1.2)
+            except asyncio.TimeoutError:
+                success = False
 
         # Fallback to cloud if local failed
         if not success and self.cloud_api:
@@ -1705,7 +1720,10 @@ class TuyaManager:
                     return False
 
             loop = asyncio.get_event_loop()
-            success = await loop.run_in_executor(None, _cloud_bright)
+            try:
+                success = await asyncio.wait_for(loop.run_in_executor(CMD_EXECUTOR, _cloud_bright), timeout=4.0)
+            except asyncio.TimeoutError:
+                success = False
 
         if success:
             if dev_id in self.device_states:
@@ -1747,7 +1765,7 @@ class TuyaManager:
                 return False
 
         loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _send)
+        return await loop.run_in_executor(CMD_EXECUTOR, _send)
 
     async def _set_cloud_temperature(self, dev_id: str, temperature: float, scale: int = 10) -> bool:
         if not self.cloud_api:
