@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 import requests
 
-from backend.config import load_config, save_config, AppConfig
+from backend.config import load_config, save_config, get_raw_config, save_raw_config, AppConfig
 from backend.tuya_manager import TuyaManager
 from backend.bt_audio_manager import BluetoothAudioManager
 from backend.kodi_manager import KodiManager
@@ -785,6 +785,44 @@ async def detect_location():
 async def get_config():
     global config
     return config.model_dump()
+
+@app.get("/api/config/raw")
+async def get_config_raw():
+    try:
+        content = get_raw_config()
+        return {"yaml": content}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error reading config: {str(e)}")
+
+@app.post("/api/config/raw")
+async def update_config_raw(payload: Dict[str, str] = Body(...)):
+    global config, _cached_weather
+    yaml_text = payload.get("yaml", "")
+    if not yaml_text.strip():
+        raise HTTPException(status_code=400, detail="Configuration YAML cannot be empty")
+    try:
+        new_app_config = save_raw_config(yaml_text)
+        config = new_app_config
+
+        # Hot-reload managers
+        tuya_mgr.reload_config(config.tuya)
+        bt_mgr.reload_config(config.bluetooth_audio)
+        kodi_mgr.reload_config(config.kodi)
+        kodi_mgr.own_port = config.server.port
+        media_player.reload_config(config.screensaver.youtube_audio)
+        screensaver_mgr.reload_config(config.screensaver)
+        _cached_weather = {}
+
+        # Broadcast update to clients
+        await ws_manager.broadcast({
+            "type": "config_updated",
+            "data": config.model_dump()
+        })
+
+        return {"status": "ok", "message": "Configuration saved & applied successfully"}
+    except Exception as e:
+        logger.error(f"Error saving raw config: {e}")
+        raise HTTPException(status_code=400, detail=f"Invalid YAML configuration: {str(e)}")
 
 @app.post("/api/config")
 async def update_full_config(new_conf_data: Dict[str, Any] = Body(...)):

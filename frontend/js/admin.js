@@ -95,8 +95,10 @@ function initAdminPanel() {
         local_key: document.getElementById("device-key").value.trim(),
         version: parseFloat(document.getElementById("device-version").value || "3.3"),
         type: document.getElementById("device-type").value,
+        category: document.getElementById("device-category")?.value.trim() || "cz",
         room: document.getElementById("device-room").value.trim(),
-        home: document.getElementById("device-home").value.trim()
+        home: document.getElementById("device-home").value.trim(),
+        stream_url: document.getElementById("device-stream-url")?.value.trim() || ""
       };
 
       try {
@@ -250,6 +252,124 @@ function initAdminPanel() {
       renderPresetStreamsTable(adminConfig.screensaver.youtube_audio.preset_streams);
     });
   }
+
+  // YAML Editor initialization
+  initYamlEditor();
+
+  // Server Hub restart
+  const btnRestartServer = document.getElementById("btn-restart-server-hub");
+  if (btnRestartServer) {
+    btnRestartServer.addEventListener("click", async () => {
+      if (!confirm("Are you sure you want to restart the HomeAuto Server backend?")) return;
+      btnRestartServer.textContent = "Restarting...";
+      try {
+        await fetch("/api/pi/restart-app", { method: "POST" });
+        showToast("Restart command sent. Reconnecting in 3 seconds...");
+        setTimeout(() => window.location.reload(), 3000);
+      } catch (e) {
+        showToast(`Restart error: ${e.message}`);
+      }
+    });
+  }
+}
+
+async function initYamlEditor() {
+  const yamlArea = document.getElementById("yaml-editor-textarea");
+  const btnSaveYaml = document.getElementById("btn-yaml-save");
+  const btnReloadYaml = document.getElementById("btn-yaml-reload");
+  const btnDownloadYaml = document.getElementById("btn-yaml-download");
+  const inputUploadYaml = document.getElementById("input-yaml-upload");
+  const statusMsg = document.getElementById("yaml-status-msg");
+
+  async function loadYaml() {
+    if (!yamlArea) return;
+    try {
+      const res = await fetch("/api/config/raw");
+      if (res.ok) {
+        const data = await res.json();
+        yamlArea.value = data.yaml || "";
+        if (statusMsg) statusMsg.textContent = "Loaded config.yaml from server";
+      }
+    } catch (e) {
+      if (statusMsg) statusMsg.textContent = "Error loading config.yaml";
+    }
+  }
+
+  // Load when user clicks on YAML tab
+  const tabYamlBtn = document.querySelector(".admin-tab-btn[data-tab='yaml']");
+  if (tabYamlBtn) {
+    tabYamlBtn.addEventListener("click", () => loadYaml());
+  }
+
+  if (btnReloadYaml) {
+    btnReloadYaml.addEventListener("click", () => loadYaml());
+  }
+
+  if (btnSaveYaml && yamlArea) {
+    btnSaveYaml.addEventListener("click", async () => {
+      const yamlContent = yamlArea.value;
+      if (!yamlContent.trim()) {
+        showToast("YAML configuration cannot be empty");
+        return;
+      }
+      btnSaveYaml.textContent = "Saving...";
+      btnSaveYaml.disabled = true;
+      try {
+        const res = await fetch("/api/config/raw", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ yaml: yamlContent })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          showToast("🎉 Raw YAML saved and hot-reloaded successfully!");
+          if (statusMsg) {
+            statusMsg.textContent = "✅ Saved & applied successfully";
+            statusMsg.style.color = "var(--accent-green)";
+          }
+          await loadAdminConfig();
+        } else {
+          showToast(`Validation error: ${data.detail || 'Invalid YAML'}`);
+          if (statusMsg) {
+            statusMsg.textContent = `❌ ${data.detail || 'Invalid YAML'}`;
+            statusMsg.style.color = "var(--accent-red)";
+          }
+        }
+      } catch (err) {
+        showToast(`Save error: ${err.message}`);
+      } finally {
+        btnSaveYaml.textContent = "💾 Save & Apply YAML";
+        btnSaveYaml.disabled = false;
+      }
+    });
+  }
+
+  if (btnDownloadYaml && yamlArea) {
+    btnDownloadYaml.addEventListener("click", () => {
+      const blob = new Blob([yamlArea.value || ""], { type: "text/yaml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `homeauto-config-${new Date().toISOString().slice(0, 10)}.yaml`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  if (inputUploadYaml && yamlArea) {
+    inputUploadYaml.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        yamlArea.value = event.target.result;
+        showToast(`Loaded ${file.name} into editor. Click "Save & Apply YAML" to activate.`);
+      };
+      reader.readAsText(file);
+    });
+  }
 }
 
 async function loadAdminConfig() {
@@ -307,10 +427,14 @@ function populateAdminFields(cfg) {
     document.getElementById("ss-idle").value = cfg.screensaver.idle_timeout_seconds || 120;
     document.getElementById("ss-transition").value = cfg.screensaver.photo_transition_seconds || 15;
     document.getElementById("ss-photo-dir").value = cfg.screensaver.photo_directory || "./frontend/assets/photos";
+    const fpDir = document.getElementById("ss-fireplace-dir");
+    if (fpDir) fpDir.value = cfg.screensaver.fireplace_directory || "./frontend/assets/fireplace";
     document.getElementById("ss-unsplash").checked = Boolean(cfg.screensaver.use_unsplash_random);
 
     if (cfg.screensaver.youtube_audio) {
       document.getElementById("ss-yt-autoplay").checked = Boolean(cfg.screensaver.youtube_audio.auto_play_on_screensaver);
+      const outMode = document.getElementById("ss-yt-output-mode");
+      if (outMode) outMode.value = cfg.screensaver.youtube_audio.output_mode || "auto";
       document.getElementById("ss-yt-vol").value = cfg.screensaver.youtube_audio.volume || 50;
       renderPresetStreamsTable(cfg.screensaver.youtube_audio.preset_streams || []);
     }
@@ -334,6 +458,10 @@ function populateAdminFields(cfg) {
   if (cfg.server) {
     document.getElementById("server-port").value = cfg.server.port || 80;
     document.getElementById("server-host").value = cfg.server.host || "0.0.0.0";
+    const remoteAdmin = document.getElementById("server-remote-admin");
+    if (remoteAdmin) remoteAdmin.checked = cfg.server.allow_remote_admin !== false;
+    const debugBox = document.getElementById("server-debug");
+    if (debugBox) debugBox.checked = Boolean(cfg.server.debug);
   }
 }
 
@@ -425,8 +553,12 @@ function editDeviceRow(id) {
   document.getElementById("device-key").value = dev.local_key || "";
   document.getElementById("device-version").value = dev.version || "3.3";
   document.getElementById("device-type").value = dev.type || "switch";
+  const catInput = document.getElementById("device-category");
+  if (catInput) catInput.value = dev.category || "cz";
   document.getElementById("device-room").value = dev.room || "";
   document.getElementById("device-home").value = dev.home || "";
+  const streamInput = document.getElementById("device-stream-url");
+  if (streamInput) streamInput.value = dev.stream_url || "";
   document.getElementById("device-test-result").textContent = "";
 
   document.getElementById("modal-device-form").style.display = "flex";
@@ -456,7 +588,8 @@ async function saveFullConfig() {
     server: {
       host: document.getElementById("server-host").value.trim() || "0.0.0.0",
       port: parseInt(document.getElementById("server-port").value || "80"),
-      debug: false
+      debug: Boolean(document.getElementById("server-debug")?.checked),
+      allow_remote_admin: Boolean(document.getElementById("server-remote-admin")?.checked)
     },
     tuya: {
       mode: "local",
@@ -492,10 +625,11 @@ async function saveFullConfig() {
       idle_timeout_seconds: parseInt(document.getElementById("ss-idle").value || "120"),
       photo_transition_seconds: parseInt(document.getElementById("ss-transition").value || "15"),
       photo_directory: document.getElementById("ss-photo-dir").value.trim() || "./frontend/assets/photos",
+      fireplace_directory: document.getElementById("ss-fireplace-dir")?.value.trim() || "./frontend/assets/fireplace",
       use_unsplash_random: document.getElementById("ss-unsplash").checked,
       youtube_audio: {
         enabled: true,
-        output_mode: adminConfig?.screensaver?.youtube_audio?.output_mode || "auto",
+        output_mode: document.getElementById("ss-yt-output-mode")?.value || "auto",
         auto_play_on_screensaver: document.getElementById("ss-yt-autoplay").checked,
         volume: parseInt(document.getElementById("ss-yt-vol").value || "50"),
         preset_streams: adminConfig?.screensaver?.youtube_audio?.preset_streams || []

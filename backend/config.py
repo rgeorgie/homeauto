@@ -115,3 +115,21 @@ def save_config(config: AppConfig, config_path: Optional[str] = None):
     data = config.model_dump()
     with open(target_path, "w", encoding="utf-8") as f:
         yaml.safe_dump(data, f, sort_keys=False)
+
+def get_raw_config(config_path: Optional[str] = None) -> str:
+    target_path = config_path or DEFAULT_CONFIG_PATH
+    if not os.path.exists(target_path):
+        if os.path.exists(EXAMPLE_CONFIG_PATH):
+            target_path = EXAMPLE_CONFIG_PATH
+        else:
+            return ""
+    with open(target_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+def save_raw_config(yaml_content: str, config_path: Optional[str] = None) -> AppConfig:
+    data = yaml.safe_load(yaml_content) or {}
+    new_config = AppConfig(**data)
+    target_path = config_path or DEFAULT_CONFIG_PATH
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write(yaml_content)
+    return new_config

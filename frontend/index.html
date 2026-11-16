@@ -374,9 +374,10 @@
         <button class="admin-tab-btn active" data-tab="devices">💡 SmartLife / Tuya Devices</button>
         <button class="admin-tab-btn" data-tab="bluetooth">🔊 Bluetooth Surround</button>
         <button class="admin-tab-btn" data-tab="kodi">🎬 Kodi Integration</button>
-        <button class="admin-tab-btn" data-tab="screensaver">🖼️ Screensaver & YouTube</button>
+        <button class="admin-tab-btn" data-tab="screensaver">🖼️ Screensaver & Audio</button>
         <button class="admin-tab-btn" data-tab="weather">🌤️ Weather & Location</button>
-        <button class="admin-tab-btn" data-tab="server">⚙️ Server & Network</button>
+        <button class="admin-tab-btn" data-tab="server">⚙️ Server & System</button>
+        <button class="admin-tab-btn" data-tab="yaml">📝 Raw YAML Editor</button>
         <button class="admin-tab-btn" data-tab="pi">🍓 Raspberry Pi</button>
       </div>
 
@@ -611,6 +612,11 @@
             </div>
 
             <div class="form-group">
+              <label class="form-label">Fireplace Video / GIF Directory</label>
+              <input type="text" id="ss-fireplace-dir" class="form-input" value="./frontend/assets/fireplace">
+            </div>
+
+            <div class="form-group">
               <label class="form-checkbox-label">
                 <input type="checkbox" id="ss-unsplash" style="width: 18px; height: 18px;">
                 <span>Use HD Nature Wallpapers (Unsplash)</span>
@@ -652,12 +658,21 @@
             </button>
           </div>
 
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 16px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; margin-bottom: 16px;">
             <div class="form-group">
               <label class="form-checkbox-label">
                 <input type="checkbox" id="ss-yt-autoplay">
                 <span>Auto-play audio when screensaver starts</span>
               </label>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Audio Output Target</label>
+              <select id="ss-yt-output-mode" class="form-select">
+                <option value="auto">Auto (HTML5 Browser for Clients, MPV for Server)</option>
+                <option value="browser">Browser / Client Only (HTML5 Audio)</option>
+                <option value="server">Server Host Only (PulseAudio / MPV)</option>
+              </select>
+              <div class="form-hint">Choose "Browser" for Remote Raspberry Pi Touchscreens</div>
             </div>
             <div class="form-group">
               <label class="form-label">Default Audio Volume (%)</label>
@@ -728,6 +743,65 @@
             <div class="form-group">
               <label class="form-label">HTTP Web Port</label>
               <input type="number" id="server-port" class="form-input" value="80">
+            </div>
+
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="server-remote-admin" checked style="width: 18px; height: 18px;">
+                <span>Allow Remote Admin</span>
+              </label>
+              <div class="form-hint">Allow browser clients on LAN to save settings & manage devices</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-checkbox-label">
+                <input type="checkbox" id="server-debug" style="width: 18px; height: 18px;">
+                <span>Debug Logging Mode</span>
+              </label>
+              <div class="form-hint">Enables verbose console logging for troubleshooting</div>
+            </div>
+          </div>
+
+          <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border-color); display: flex; gap: 12px; flex-wrap: wrap;">
+            <button class="action-btn" id="btn-restart-server-hub" type="button" style="background: rgba(239, 68, 68, 0.2); color: var(--accent-red);">
+              ♻️ Restart HomeAuto Server Backend
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUBTAB 7: RAW YAML EDITOR -->
+      <div id="admin-subview-yaml" class="admin-subview">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Direct YAML Configuration Editor</div>
+              <div class="card-subtitle">Full access to <code>config.yaml</code> with live schema validation and instant hot-reloading</div>
+            </div>
+            <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <button class="action-btn" id="btn-yaml-download" style="background: rgba(255,255,255,0.08); font-size: 13px;">
+                📥 Download Backup
+              </button>
+              <label class="action-btn" style="background: rgba(255,255,255,0.08); font-size: 13px; cursor: pointer; margin: 0;">
+                📤 Upload & Restore
+                <input type="file" id="input-yaml-upload" accept=".yaml,.yml" style="display: none;">
+              </label>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 14px;">
+            <textarea id="yaml-editor-textarea" spellcheck="false" style="width: 100%; min-height: 420px; font-family: monospace; font-size: 13px; line-height: 1.5; background: #0f172a; color: #f8fafc; border: 1px solid var(--border-color); border-radius: 8px; padding: 14px; resize: vertical; box-sizing: border-box;"></textarea>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <span id="yaml-status-msg" style="font-size: 13px; color: var(--text-muted);"></span>
+            <div style="display: flex; gap: 10px;">
+              <button class="action-btn" id="btn-yaml-reload" style="background: rgba(255,255,255,0.08);">
+                🔄 Discard Changes & Reload
+              </button>
+              <button class="action-btn" id="btn-yaml-save" style="background: linear-gradient(135deg, #10b981, #059669);">
+                💾 Save & Apply YAML
+              </button>
             </div>
           </div>
         </div>
@@ -854,8 +928,9 @@
           </div>
         </div>
 
-        <div class="form-group">
-          <label class="form-label">Device Category / Type</label>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+          <div class="form-group">
+            <label class="form-label">Device Type</label>
             <select id="device-type" class="form-select">
               <option value="switch">Switch / Smart Panel Relay</option>
               <option value="light">Light / Dimmable Bulb</option>
@@ -866,6 +941,11 @@
               <option value="sensor">Sensor</option>
               <option value="camera">📷 Camera / Video Doorbell</option>
             </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Category Code (Optional)</label>
+            <input type="text" id="device-category" class="form-input" placeholder="e.g. cz, dj, sp, kg, sp">
+          </div>
         </div>
 
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
@@ -877,6 +957,12 @@
             <label class="form-label">Room / Zone</label>
             <input type="text" id="device-room" class="form-input" placeholder="(from Tuya)">
           </div>
+        </div>
+
+        <div class="form-group" id="group-device-stream">
+          <label class="form-label">RTSP Stream URL (Cameras only)</label>
+          <input type="text" id="device-stream-url" class="form-input" placeholder="rtsp://admin:password@192.168.1.120:554/live/ch0">
+          <div class="form-hint">Optional local RTSP URL for live camera streams</div>
         </div>
 
         <div style="margin: 16px 0; display: flex; align-items: center; justify-content: space-between;">
