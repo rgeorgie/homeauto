@@ -299,6 +299,8 @@ function renderFloorplanEditor() {
 
 function createPlacedDeviceEl(canvas, pt, pos) {
   const el = floorplanItemEl(pt, pos);
+  el.style.left = `${pos.x * 100}%`;
+  el.style.top = `${pos.y * 100}%`;
   el.addEventListener("pointerdown", (e) => startMoveDevice(e, canvas, pt.key, el));
   return el;
 }
