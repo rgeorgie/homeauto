@@ -483,11 +483,15 @@
               <div class="card-subtitle">Draw rooms (named after your device rooms), then place devices inside them</div>
             </div>
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+              <select id="floorplan-home-select" class="form-select" style="width: auto; min-width: 180px;" title="Home whose floor plan you are editing"></select>
               <select id="floorplan-room-select" class="form-select" style="width: auto; min-width: 180px;"></select>
               <button class="action-btn" id="btn-floorplan-save" type="button">💾 Save Floor Plan</button>
               <button class="action-btn" id="btn-floorplan-clear" type="button" style="background: rgba(255,255,255,0.08);">Clear Plan</button>
             </div>
           </div>
+          <p id="floorplan-home-hint" style="font-size: 13px; color: var(--accent-amber); margin-bottom: 12px;">
+            Select a home to edit its floor plan. Homes come from Admin &gt; Tuya Cloud &gt; Fetch &amp; Sync All Cloud Keys.
+          </p>
           <p style="font-size: 13px; color: var(--text-muted); margin-bottom: 12px;">
             Drag on the plan to draw a room for the selected room name. Click a device chip, then click the plan to place it. Drag a device to move it; drag a room's corner handle to resize it.
           </p>

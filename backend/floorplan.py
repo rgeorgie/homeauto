@@ -18,9 +18,13 @@ class DevicePlacement(BaseModel):
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
 
-class FloorPlan(BaseModel):
+class HomeFloorPlan(BaseModel):
     rooms: List[FloorRoom] = Field(default_factory=list)
     devices: Dict[str, DevicePlacement] = Field(default_factory=dict)  # device id -> position
+
+class FloorPlan(BaseModel):
+    # One plan per Tuya home, because room names repeat across homes (e.g. "Living Room")
+    homes: Dict[str, HomeFloorPlan] = Field(default_factory=dict)
 
 def get_floorplan() -> FloorPlan:
     if not os.path.exists(FLOORPLAN_PATH):

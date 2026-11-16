@@ -1,24 +1,42 @@
 // Floor plan: admin editor (draw rooms, place devices) and read-only dashboard view.
-// Coordinates are fractions (0-1) of the plan size so the layout scales to any screen.
+// One plan per Tuya home. Coordinates are fractions (0-1) of the plan size so the layout scales.
 
-let floorplan = { rooms: [], devices: {} };
+let floorplan = { homes: {} };
 let floorplanEditorInitialized = false;
 let floorplanPendingDeviceId = null;
 let floorplanEditorSignature = "";
 
 const FLOORPLAN_MIN_SIZE = 0.03;
 
+// The plan for the home selected in the dashboard / admin filter, created on first use
+function currentHomeName() {
+  const selected = getSelectedHome();
+  return selected === ALL_HOMES ? "" : selected;
+}
+
+function currentHomePlan() {
+  const home = currentHomeName();
+  if (!home) return null;
+  if (!floorplan.homes[home]) floorplan.homes[home] = { rooms: [], devices: {} };
+  return floorplan.homes[home];
+}
+
+function homeDevices() {
+  const home = currentHomeName();
+  return (state.devices || []).filter(d => d.home === home);
+}
+
 function floorplanDeviceSignature() {
-  return (state.devices || []).map(d => `${d.id}|${d.name}|${d.room}`).join(";");
+  return `${currentHomeName()}#` + homeDevices().map(d => `${d.id}|${d.name}|${d.room}`).join(";");
 }
 
 function floorplanRoomNames() {
   const names = new Set();
-  (state.devices || []).forEach(d => {
+  homeDevices().forEach(d => {
     const r = (d.room || "").trim();
     if (r && r !== "Default") names.add(r);
   });
-  floorplan.rooms.forEach(r => names.add(r.name));
+  ((currentHomePlan() || {}).rooms || []).forEach(r => names.add(r.name));
   return [...names].sort((a, b) => a.localeCompare(b));
 }
 
@@ -38,7 +56,7 @@ async function loadFloorplan() {
   renderDashboardFloorplan();
 }
 
-// Called on every device state push: the editor is rebuilt only when the device list changes,
+// Called on every device state push: the editor is rebuilt only when the device list or home changes,
 // so an in-progress drag or room draw is not interrupted by the 3-second state refresh.
 function onFloorplanStateUpdate() {
   if (floorplanDeviceSignature() !== floorplanEditorSignature) renderFloorplanEditor();
@@ -52,6 +70,10 @@ function onFloorplanUpdated(data) {
 }
 
 async function saveFloorplanToServer() {
+  if (!currentHomeName()) {
+    showToast("Select a home first");
+    return;
+  }
   try {
     const res = await fetch("/api/floorplan", {
       method: "PUT",
@@ -59,7 +81,7 @@ async function saveFloorplanToServer() {
       body: JSON.stringify(floorplan)
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    showToast("Floor plan saved");
+    showToast(`Floor plan saved for ${currentHomeName()}`);
   } catch (err) {
     showToast(`Floor plan save error: ${err.message}`);
   }
@@ -76,8 +98,11 @@ function initFloorplanEditor() {
 
   document.getElementById("btn-floorplan-save")?.addEventListener("click", () => saveFloorplanToServer());
   document.getElementById("btn-floorplan-clear")?.addEventListener("click", () => {
-    if (!confirm("Clear the whole floor plan?")) return;
-    floorplan = { rooms: [], devices: {} };
+    const plan = currentHomePlan();
+    if (!plan) return;
+    if (!confirm(`Clear the floor plan for ${currentHomeName()}?`)) return;
+    plan.rooms = [];
+    plan.devices = {};
     renderFloorplanEditor();
     renderDashboardFloorplan();
   });
@@ -85,10 +110,12 @@ function initFloorplanEditor() {
   // Empty-canvas press: either places the selected device or starts drawing a room
   canvas.addEventListener("pointerdown", (e) => {
     if (e.button !== 0 || e.target !== canvas) return;
+    const plan = currentHomePlan();
+    if (!plan) return;
 
     if (floorplanPendingDeviceId) {
       const p = toPlanCoords(canvas, e);
-      floorplan.devices[floorplanPendingDeviceId] = { x: p.x, y: p.y };
+      plan.devices[floorplanPendingDeviceId] = { x: p.x, y: p.y };
       floorplanPendingDeviceId = null;
       renderFloorplanEditor();
       renderDashboardFloorplan();
@@ -97,7 +124,7 @@ function initFloorplanEditor() {
 
     const roomName = document.getElementById("floorplan-room-select")?.value;
     if (!roomName) {
-      showToast("Add a device with a room name first");
+      showToast("This home has no device rooms yet");
       return;
     }
 
@@ -123,8 +150,8 @@ function initFloorplanEditor() {
       preview.remove();
       if (draft.w >= FLOORPLAN_MIN_SIZE && draft.h >= FLOORPLAN_MIN_SIZE) {
         // One rectangle per room name: a redraw replaces the previous one
-        floorplan.rooms = floorplan.rooms.filter(r => r.name !== draft.name);
-        floorplan.rooms.push(draft);
+        plan.rooms = plan.rooms.filter(r => r.name !== draft.name);
+        plan.rooms.push(draft);
         renderFloorplanEditor();
         renderDashboardFloorplan();
       }
@@ -133,6 +160,15 @@ function initFloorplanEditor() {
     canvas.addEventListener("pointerup", up);
     canvas.addEventListener("pointercancel", up);
     move(e);
+  });
+
+  // Home selection is shared with the dashboard filter, so the editor follows it
+  document.getElementById("floorplan-home-select")?.addEventListener("change", (e) => {
+    localStorage.setItem(HOME_FILTER_KEY, e.target.value);
+    floorplanPendingDeviceId = null;
+    renderTuyaDevices(state.devices);
+    renderFloorplanEditor();
+    renderDashboardFloorplan();
   });
 }
 
@@ -152,21 +188,45 @@ function positionBox(el, box) {
   el.style.height = `${box.h * 100}%`;
 }
 
+function renderHomeSelect() {
+  const select = document.getElementById("floorplan-home-select");
+  if (!select) return;
+  const homes = [...new Set((state.devices || []).map(d => d.home).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const current = currentHomeName();
+  const key = homes.join("\u0001");
+  if (select.dataset.homes !== key) {
+    select.dataset.homes = key;
+    select.replaceChildren(...homes.map(h => new Option(h, h)));
+  }
+  select.disabled = homes.length === 0;
+  if (current && homes.includes(current)) select.value = current;
+}
+
 function renderFloorplanEditor() {
   const canvas = document.getElementById("floorplan-editor");
   if (!canvas) return;
   floorplanEditorSignature = floorplanDeviceSignature();
-  const names = floorplanRoomNames();
+  renderHomeSelect();
+
+  const plan = currentHomePlan();
+  const hint = document.getElementById("floorplan-home-hint");
+  if (hint) hint.style.display = plan ? "none" : "";
 
   const select = document.getElementById("floorplan-room-select");
   if (select) {
+    const names = floorplanRoomNames();
     const current = select.value;
     select.replaceChildren(...names.map(n => new Option(n, n)));
     if (names.includes(current)) select.value = current;
   }
 
   canvas.replaceChildren();
-  floorplan.rooms.forEach(room => {
+  if (!plan) {
+    renderUnplacedDevices();
+    return;
+  }
+
+  plan.rooms.forEach(room => {
     const el = document.createElement("div");
     el.className = "floorplan-room";
     positionBox(el, room);
@@ -181,8 +241,8 @@ function renderFloorplanEditor() {
     canvas.appendChild(el);
   });
 
-  (state.devices || []).forEach(dev => {
-    const pos = floorplan.devices[dev.id];
+  homeDevices().forEach(dev => {
+    const pos = plan.devices[dev.id];
     if (!pos) return;
     canvas.appendChild(createPlacedDeviceEl(canvas, dev, pos));
   });
@@ -205,10 +265,12 @@ function startMoveDevice(e, canvas, devId, el) {
   if (e.button !== 0) return;
   e.preventDefault();
   e.stopPropagation();
+  const plan = currentHomePlan();
+  if (!plan) return;
   canvas.setPointerCapture(e.pointerId);
   const move = (ev) => {
     const p = toPlanCoords(canvas, ev);
-    floorplan.devices[devId] = { x: p.x, y: p.y };
+    plan.devices[devId] = { x: p.x, y: p.y };
     el.style.left = `${p.x * 100}%`;
     el.style.top = `${p.y * 100}%`;
   };
@@ -248,11 +310,12 @@ function startResizeRoom(e, canvas, room) {
 function renderUnplacedDevices() {
   const list = document.getElementById("floorplan-unplaced");
   if (!list) return;
-  const unplaced = (state.devices || []).filter(d => !floorplan.devices[d.id]);
+  const plan = currentHomePlan();
+  const unplaced = homeDevices().filter(d => !(plan && plan.devices[d.id]));
   if (unplaced.length === 0) {
     const empty = document.createElement("div");
     empty.className = "floorplan-empty";
-    empty.textContent = "All devices are placed";
+    empty.textContent = plan ? "All devices are placed" : "Select a home to see its devices";
     list.replaceChildren(empty);
     return;
   }
@@ -274,7 +337,8 @@ function renderUnplacedDevices() {
 function renderDashboardFloorplan() {
   const container = document.getElementById("dashboard-floorplan");
   if (!container) return;
-  if (floorplan.rooms.length === 0) {
+  const plan = currentHomePlan();
+  if (!plan || plan.rooms.length === 0) {
     container.style.display = "none";
     container.replaceChildren();
     return;
@@ -283,7 +347,7 @@ function renderDashboardFloorplan() {
 
   const canvas = document.createElement("div");
   canvas.className = "floorplan-canvas readonly";
-  floorplan.rooms.forEach(room => {
+  plan.rooms.forEach(room => {
     const el = document.createElement("div");
     el.className = "floorplan-room";
     positionBox(el, room);
@@ -293,8 +357,8 @@ function renderDashboardFloorplan() {
     el.appendChild(label);
     canvas.appendChild(el);
   });
-  (state.devices || []).forEach(dev => {
-    const pos = floorplan.devices[dev.id];
+  homeDevices().forEach(dev => {
+    const pos = plan.devices[dev.id];
     if (!pos) return;
     const el = document.createElement("div");
     el.className = `floorplan-device ${floorplanDeviceStateClass(dev)}`;
