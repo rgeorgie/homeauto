@@ -835,6 +835,9 @@ body {
 .floorplan-device.lamp-on { box-shadow: 0 0 6px 2px rgba(250, 204, 21, 0.55), 0 0 22px 10px rgba(250, 204, 21, 0.3); }
 .floorplan-device.off { color: var(--text-muted); }
 .floorplan-device.offline { opacity: 0.45; border-style: dashed; }
+/* Battery draining: warning tone on the item (amber at 30%, red at 15%), after .off so it stays visible */
+.floorplan-device.battery-warn { border-color: var(--accent-amber); color: var(--accent-amber); }
+.floorplan-device.battery-alert { border-color: var(--accent-red); color: var(--accent-red); }
 .floorplan-canvas.readonly .floorplan-device { cursor: default; }
 .floorplan-device-list { display: flex; flex-direction: column; gap: 8px; max-height: 420px; overflow-y: auto; }
 .floorplan-chip {

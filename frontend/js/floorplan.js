@@ -321,10 +321,31 @@ function createPlacedDeviceEl(canvas, pt, pos) {
   return el;
 }
 
+// Battery warning for a placed device: "warn" at 30% or lower (amber), "alert" at 15% or lower (red).
+// Uses the same thresholds as the battery chip on the device card. Battery state text (Low/Medium/High) is mapped to percent.
+function floorplanBatteryLevel(dev) {
+  if (dev.battery !== undefined && dev.battery !== null && !isNaN(dev.battery)) {
+    const pct = Number(dev.battery);
+    return pct <= 15 ? "alert" : pct <= 30 ? "warn" : null;
+  }
+  if (dev.battery_state) {
+    const state = { Low: "alert", Medium: "warn" }[dev.battery_state];
+    return state || null;
+  }
+  return null;
+}
+
 // What a placed item looks like on the plan. Switches show only their chosen icon,
 // sensors show only their state, and doorbells / cameras show only their icon.
 // Shared by the editor and the dashboard so both stay the same.
 function floorplanItemEl(pt, pos) {
+  const el = floorplanBaseItemEl(pt, pos);
+  const batteryWarn = floorplanBatteryLevel(pt.dev);
+  if (batteryWarn && pt.dev.online) el.classList.add("battery-" + batteryWarn);
+  return el;
+}
+
+function floorplanBaseItemEl(pt, pos) {
   const el = document.createElement("div");
   const dev = pt.dev;
   const kind = deviceKind(dev);
