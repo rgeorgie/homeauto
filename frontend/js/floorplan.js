@@ -47,9 +47,16 @@ function homeDevices() {
   return (state.devices || []).filter(d => d.home === home);
 }
 
-// Smart panels and power strips keep one point with their full button card, instead of per-channel lamps / vents
+// Power strip: Tuya category "pc", or a device with USB outputs (channel labels "USB n")
+function isPowerStrip(dev) {
+  const channels = Array.isArray(dev.channels) ? dev.channels : [];
+  if (dev.category === "pc" || channels.some(ch => /^USB/i.test(ch.label || ""))) return true;
+  return !dev.category && /strip/i.test(dev.name || "");
+}
+
+// Smart control panels and power strips keep one point with their full button card, instead of per-channel lamps / vents
 function isSingleItemDevice(dev) {
-  return /smart.*panel|strip/i.test(dev.name || "");
+  return isPowerStrip(dev) || /smart.*panel/i.test(dev.name || "");
 }
 
 // Placeable items. A plain device is one point; each channel of a multi-gang switch is its own point
@@ -66,7 +73,7 @@ function homePoints() {
       }));
     } else {
       // Power strips are shown as a strip icon, not as lamp/vent, and open their card on tap
-      const isStrip = /strip/i.test(dev.name || "");
+      const isStrip = isPowerStrip(dev);
       const isPanel = isSingleItemDevice(dev) && !isStrip;
       const switchKind = ["switch", "light", "socket"].includes(deviceKind(dev));
       points.push({ key: dev.id, dev, channel: null, name: dev.name, isOn: !!dev.is_on,
