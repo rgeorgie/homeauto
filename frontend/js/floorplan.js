@@ -9,6 +9,8 @@ let floorDeviceOpenId = null; // device whose card is open in the popup
 let floorplanPendingKind = "lamp"; // how the pending switch/relay will be shown: "lamp" or "vent"
 
 const PLAN_KIND_ICON = { lamp: "💡", vent: "🌀" };
+const PLAN_STRIP_ICON = "🔌";
+const PLAN_PANEL_ICON = "🔘";
 
 const FLOORPLAN_MIN_SIZE = 0.03;
 
@@ -63,11 +65,15 @@ function homePoints() {
         name: `${dev.name} · ${ch.label || "Line " + ch.index}`, isOn: !!ch.is_on
       }));
     } else {
+      // Power strips are shown as a strip icon, not as lamp/vent, and open their card on tap
+      const isStrip = /strip/i.test(dev.name || "");
+      const isPanel = isSingleItemDevice(dev) && !isStrip;
       const switchKind = ["switch", "light", "socket"].includes(deviceKind(dev));
       points.push({ key: dev.id, dev, channel: null, name: dev.name, isOn: !!dev.is_on,
-        isSwitch: switchKind || (channels.length > 1),
+        isStrip, isPanel,
+        isSwitch: !isStrip && !isPanel && (switchKind || channels.length > 1),
         // A single-output relay toggles on tap; strips and panels open their card
-        relay: switchKind && channels.length <= 1 });
+        relay: !isStrip && !isPanel && switchKind && channels.length <= 1 });
     }
   });
   return points;
@@ -337,6 +343,17 @@ function floorplanItemEl(pt, pos) {
   if (kind === "camera") {
     el.className = `floorplan-device ${dev.online ? "on" : "offline"}`;
     el.textContent = "📷";
+    return el;
+  }
+  if (pt.isStrip) {
+    el.className = `floorplan-device ${pt.isOn ? "on" : (dev.online ? "off" : "offline")}`;
+    el.textContent = PLAN_STRIP_ICON;
+    return el;
+  }
+  if (pt.isPanel) {
+    // Smart control panel: always a switch, never lamp or vent
+    el.className = `floorplan-device ${pt.isOn ? "on" : (dev.online ? "off" : "offline")}`;
+    el.textContent = PLAN_PANEL_ICON;
     return el;
   }
   if (pt.channel !== null || pt.isSwitch) {
