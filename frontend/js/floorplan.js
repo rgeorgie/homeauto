@@ -6,6 +6,9 @@ let floorplanEditorInitialized = false;
 let floorplanPendingDeviceId = null;
 let floorplanEditorSignature = "";
 let floorDeviceOpenId = null; // device whose card is open in the popup
+let floorplanPendingKind = "lamp"; // how the pending switch/relay will be shown: "lamp" or "vent"
+
+const PLAN_KIND_ICON = { lamp: "💡", vent: "🌀" };
 
 const FLOORPLAN_MIN_SIZE = 0.03;
 
@@ -42,6 +45,11 @@ function homeDevices() {
   return (state.devices || []).filter(d => d.home === home);
 }
 
+// Smart panels keep one point with their full button card, instead of being split into per-channel lamps
+function isSmartPanel(dev) {
+  return /smart.*panel/i.test(dev.name || "");
+}
+
 // Placeable items. A plain device is one point; each channel of a multi-gang switch is its own point
 // (e.g. "Light Living room · Line 1" and "· Line 2") so each can be placed and shown as a lamp.
 // Point key: device id, or "device id#channel index" for a channel.
@@ -49,7 +57,7 @@ function homePoints() {
   const points = [];
   homeDevices().forEach(dev => {
     const channels = Array.isArray(dev.channels) ? dev.channels : [];
-    if (channels.length > 1) {
+    if (channels.length > 1 && !isSmartPanel(dev)) {
       channels.forEach(ch => points.push({
         key: `${dev.id}#${ch.index}`, dev, channel: ch.index,
         name: `${dev.name} · ${ch.label || "Line " + ch.index}`, isOn: !!ch.is_on
@@ -152,7 +160,7 @@ function initFloorplanEditor() {
 
     if (floorplanPendingDeviceId) {
       const p = toPlanCoords(canvas, e);
-      plan.devices[floorplanPendingDeviceId] = { x: p.x, y: p.y };
+      plan.devices[floorplanPendingDeviceId] = { x: p.x, y: p.y, kind: floorplanPendingKind };
       floorplanPendingDeviceId = null;
       renderFloorplanEditor();
       renderDashboardFloorplan();
@@ -291,7 +299,7 @@ function renderFloorplanEditor() {
 function createPlacedDeviceEl(canvas, pt, pos) {
   const el = document.createElement("div");
   el.className = `floorplan-device ${pt.isOn ? "on" : (pt.dev.online ? "off" : "offline")}`;
-  el.textContent = pt.name;
+  el.textContent = pt.channel !== null ? PLAN_KIND_ICON[pos.kind || "lamp"] : pt.name;
   el.title = pt.name;
   el.style.left = `${pos.x * 100}%`;
   el.style.top = `${pos.y * 100}%`;
@@ -308,7 +316,7 @@ function startMoveDevice(e, canvas, key, el) {
   canvas.setPointerCapture(e.pointerId);
   const move = (ev) => {
     const p = toPlanCoords(canvas, ev);
-    plan.devices[key] = { x: p.x, y: p.y };
+    plan.devices[key] = { ...plan.devices[key], x: p.x, y: p.y };
     el.style.left = `${p.x * 100}%`;
     el.style.top = `${p.y * 100}%`;
   };
@@ -358,6 +366,9 @@ function renderUnplacedDevices() {
     return;
   }
   list.replaceChildren(...unplaced.map(pt => {
+    const row = document.createElement("div");
+    row.className = "floorplan-chip-row";
+
     const chip = document.createElement("button");
     chip.type = "button";
     chip.className = "floorplan-chip" + (floorplanPendingDeviceId === pt.key ? " active" : "");
@@ -366,7 +377,26 @@ function renderUnplacedDevices() {
       floorplanPendingDeviceId = floorplanPendingDeviceId === pt.key ? null : pt.key;
       renderUnplacedDevices();
     });
-    return chip;
+    row.appendChild(chip);
+
+    // Switch / relay channels: choose how they are shown before placing
+    if (pt.channel !== null) {
+      const kinds = document.createElement("div");
+      kinds.className = "floorplan-kind-picker";
+      Object.entries(PLAN_KIND_ICON).forEach(([kind, icon]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "floorplan-kind-btn" + (floorplanPendingKind === kind ? " active" : "");
+        btn.textContent = `${icon} ${kind === "lamp" ? "Lamp" : "Vent"}`;
+        btn.addEventListener("click", () => {
+          floorplanPendingKind = kind;
+          renderUnplacedDevices();
+        });
+        kinds.appendChild(btn);
+      });
+      row.appendChild(kinds);
+    }
+    return row;
   }));
 }
 
@@ -400,7 +430,8 @@ function renderDashboardFloorplan() {
     if (!pos) return;
     const el = document.createElement("div");
     el.className = `floorplan-device ${pt.isOn ? "on" : (pt.dev.online ? "off" : "offline")}`;
-    el.textContent = pt.channel !== null ? `💡 ${pt.name}` : floorplanDeviceLabel(pt.dev);
+    // Switch / relay channels show only their icon; sensors and thermostats keep their readings
+    el.textContent = pt.channel !== null ? PLAN_KIND_ICON[pos.kind || "lamp"] : floorplanDeviceLabel(pt.dev);
     el.title = pt.name;
     el.style.left = `${pos.x * 100}%`;
     el.style.top = `${pos.y * 100}%`;

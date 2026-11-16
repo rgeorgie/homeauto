@@ -18,3 +18,4 @@ services:
       - ./frontend/assets/photos:/app/frontend/assets/photos:ro
       - ./frontend/assets/fireplace:/app/frontend/assets/fireplace:ro
       - ./radio_favorites.json:/app/radio_favorites.json
+      - ./floorplan.json:/app/floorplan.json

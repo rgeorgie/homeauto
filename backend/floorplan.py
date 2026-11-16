@@ -1,6 +1,6 @@
 import json
 import os
-from typing import Dict, List
+from typing import Dict, List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -17,6 +17,7 @@ class FloorRoom(BaseModel):
 class DevicePlacement(BaseModel):
     x: float = Field(ge=0, le=1)
     y: float = Field(ge=0, le=1)
+    kind: Literal["lamp", "vent"] = "lamp"  # how a switch / relay is shown on the plan
 
 class HomeFloorPlan(BaseModel):
     rooms: List[FloorRoom] = Field(default_factory=list)

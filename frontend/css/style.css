@@ -847,3 +847,16 @@ body {
 }
 .floorplan-chip.active { border-color: var(--accent-blue); background: rgba(59, 130, 246, 0.2); }
 .floorplan-empty { font-size: 13px; color: var(--text-muted); }
+.floorplan-chip-row { display: flex; flex-direction: column; gap: 4px; }
+.floorplan-kind-picker { display: flex; gap: 6px; }
+.floorplan-kind-btn {
+  flex: 1;
+  padding: 6px 8px;
+  font-size: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.floorplan-kind-btn.active { border-color: var(--accent-blue); color: var(--text-main); background: rgba(59, 130, 246, 0.2); }
