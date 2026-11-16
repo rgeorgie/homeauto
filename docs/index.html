@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HomeAuto Platform</title>
+  <style>
+    body {
+      margin: 0;
+      background: #ffffff;
+      color: #1f2328;
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 15px;
+      line-height: 1.6;
+    }
+    main {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 40px 24px 32px;
+    }
+    h1 { font-size: 30px; margin: 0 0 8px; }
+    h2 { font-size: 22px; margin: 40px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; }
+    h3 { font-size: 17px; margin: 24px 0 8px; }
+    p { margin: 8px 0; }
+    hr { border: 0; border-top: 1px solid #e5e7eb; margin: 32px 0; }
+    ul, ol { padding-left: 24px; margin: 8px 0; }
+    li { margin: 4px 0; }
+    a { color: #3b82f6; }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 13px;
+      background: #f7f8fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      padding: 1px 5px;
+    }
+    pre {
+      background: #f7f8fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px 14px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    pre code { background: none; border: 0; padding: 0; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 12px 0;
+      font-size: 14px;
+    }
+    th, td {
+      border: 1px solid #e5e7eb;
+      padding: 8px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #f7f8fa; }
+    figure {
+      margin: 16px 0 0;
+      background: #f7f8fa;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+    }
+    figure img {
+      display: block;
+      width: 100%;
+      height: auto;
+      border-radius: 4px;
+    }
+    figcaption {
+      margin-top: 8px;
+      color: #57606a;
+      font-size: 14px;
+    }
+    .muted { color: #57606a; }
+    footer {
+      margin-top: 48px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #57606a;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>🏡 HomeAuto Platform</h1>
+    <p>A complete, modern, touchscreen-optimized Home Automation Hub built for <strong>Raspberry Pi OS (Raspbian)</strong> with a <strong>15" Touchscreen</strong> and <strong>Bluetooth Surround Sound</strong>.</p>
+
+    <hr>
+
+    <h2>🌟 Key Features</h2>
+    <ol>
+      <li>
+        <strong>💡 SmartLife &amp; Tuya Device Connectivity</strong>
+        <ul>
+          <li><strong>Ultra-fast Local Socket Control</strong> via <code>tinytuya</code> (no cloud latency, works offline).</li>
+          <li><strong>Cloud API Fallback</strong> via Tuya Open API for discovery and remote sync.</li>
+          <li>Interactive dashboard widgets: toggles for switches, sockets, smart plugs, and brightness sliders for dimmable lights/LEDs.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>📱 15" Touchscreen Optimized Interface</strong>
+        <ul>
+          <li>Sleek dark OLED/glassmorphism UI with large touch targets.</li>
+          <li>Works in full-screen <strong>Chromium Kiosk Mode</strong> on the 15" touchscreen display.</li>
+          <li>Real-time reactive state updates over WebSockets (instant sync between touchscreen and phone/laptop browsers).</li>
+        </ul>
+      </li>
+      <li>
+        <strong>🖼️ Ambient Screensaver with Glanceable Cards &amp; YouTube Audio</strong>
+        <ul>
+          <li>Auto-activates after configurable idle period (e.g. 2 minutes).</li>
+          <li><strong>Photo Slideshow</strong>: Cycles through local photos (<code>frontend/assets/photos</code>) or curated Unsplash HD nature collections with smooth cross-fading.</li>
+          <li><strong>Glanceable Cards</strong>: Giant OLED clock, live weather forecast, active SmartLife devices count, and Raspberry Pi CPU temperature.</li>
+          <li><strong>Background Audio</strong>: Integrated YouTube audio streamer (Lofi, Jazz, Ambient nature sounds or custom YouTube URL) with volume controls.</li>
+          <li><strong>Instant Wake</strong>: Tap anywhere on the 15" touchscreen to wake up.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>🛠️ Admin Setup &amp; Control Center Web Panel</strong>
+        <ul>
+          <li><strong>Device Management</strong>: Add, edit, test local connection, and delete SmartLife / Tuya devices, smart panels, and switches in real-time.</li>
+          <li><strong>Bluetooth Surround Audio Setup</strong>: Configure target MAC, auto-reconnect supervisor, default volume.</li>
+          <li><strong>Kodi Settings &amp; Connectivity Tester</strong>: Configure host/port, test connection with real-time ping.</li>
+          <li><strong>Screensaver &amp; YouTube Audio Stream Manager</strong>: Add custom YouTube background streams, set idle timeout, photo folder, and glanceable widget toggles.</li>
+          <li><strong>Weather &amp; Geolocation</strong>: Auto-detect your latitude &amp; longitude with 1-click.</li>
+          <li><strong>Live Hot-Reload</strong>: Save changes directly to <code>config.yaml</code> with automatic hot-reloading of all backend workers without restarting the service.</li>
+        </ul>
+      </li>
+      <li value="5">
+        <strong>🎬 Kodi Integration for TV &amp; Movies</strong>
+        <ul>
+          <li>One-touch launcher to start Kodi on your display.</li>
+          <li>Live "Now Playing" playback banner and media controls.</li>
+          <li>Full touch D-Pad remote control (Up, Down, Left, Right, OK, Back, Home, Menu).</li>
+        </ul>
+      </li>
+      <li value="5">
+        <strong>🔊 Bluetooth Surround Sound Audio Routing</strong>
+        <ul>
+          <li>Auto-reconnect supervisor for your Bluetooth soundbar or surround speaker setup.</li>
+          <li>Real-time volume slider and master sink control.</li>
+          <li>Device scanning and pairing interface.</li>
+        </ul>
+      </li>
+      <li value="6">
+        <strong>⚙️ Hardware Telemetry</strong>
+        <ul>
+          <li>Live monitoring of Raspberry Pi CPU usage, CPU Temperature (<code>vcgencmd</code>), RAM utilization, and IP address.</li>
+        </ul>
+      </li>
+    </ol>
+
+    <h2>📸 Screenshots</h2>
+
+    <h3>Dashboard floor plan</h3>
+    <p>Rooms are drawn on the plan and named after the device rooms. Lamps that are on glow, and battery-powered devices change colour as their battery drains.</p>
+    <figure>
+      <img src="screenshots/01-dashboard-plan.png" alt="Dashboard showing the floor plan with rooms and placed devices">
+      <figcaption>Dashboard with the floor plan.</figcaption>
+    </figure>
+
+    <h3>Room device cards</h3>
+    <p>Tap a room on the plan to list its devices below it. Tap the room again, or an empty area of the plan, to hide them.</p>
+    <figure>
+      <img src="screenshots/02-dashboard-room-selected.png" alt="Living room selected, with its device cards listed under the floor plan">
+      <figcaption>Living room selected, with its devices listed under the plan.</figcaption>
+    </figure>
+
+    <h3>Floor plan editor</h3>
+    <p>In Admin Setup, choose a home and a room name, then drag on the plan to draw the room. Place devices by clicking a chip and then the plan.</p>
+    <figure>
+      <img src="screenshots/03-admin-floorplan-editor.png" alt="Admin floor plan editor with rooms, placed devices and room and home selectors">
+      <figcaption>Floor plan editor in Admin Setup.</figcaption>
+    </figure>
+
+    <hr>
+
+    <h2>🛠️ Hardware Requirements</h2>
+
+    <table>
+      <thead>
+        <tr><th>Hardware Component</th><th>Details &amp; Recommendation</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><strong>Raspberry Pi</strong></td><td>Raspberry Pi 4 (4GB/8GB) or Raspberry Pi 5 running <strong>Raspberry Pi OS (64-bit)</strong></td></tr>
+        <tr><td><strong>15" Touchscreen</strong></td><td>HDMI Video + USB Touchscreen (Capacitive Touch recommended)</td></tr>
+        <tr><td><strong>Bluetooth Audio</strong></td><td>Any Bluetooth soundbar, surround sound system, or wireless speaker</td></tr>
+        <tr><td><strong>Power Supply</strong></td><td>Official 15W/27W USB-C Raspberry Pi Power Supply</td></tr>
+      </tbody>
+    </table>
+
+    <hr>
+
+    <h2>🚀 Interactive Installation (LXC, Raspberry Pi, Debian / Ubuntu)</h2>
+    <p>HomeAuto features an interactive installer supporting three deployment scenarios:</p>
+<pre><code># 1. Clone repository
+git clone https://github.com/your-username/homeauto.git
+cd homeauto
+
+# 2. Make installer executable &amp; run
+chmod +x install.sh
+./install.sh</code></pre>
+
+    <p>The installer will prompt you to select your setup:</p>
+<pre><code>  1) 📦 Headless Server ONLY (LXC container, Proxmox, VM, NAS, Server)
+        • Installs Python backend, FastAPI, and media APIs (no GUI/Chromium)
+        • Configures &amp; enables background systemd service on port 80
+
+  2) 📺 Remote Touchscreen Kiosk ONLY (Raspberry Pi display)
+        • Installs Chromium kiosk display &amp; autostart
+        • Connects over HTTP to your remote HomeAuto Server (e.g. LXC container)
+        • No local Python server needed on the Pi
+
+  3) 🚀 All-in-One Standalone (Server + Kiosk on Raspberry Pi)
+        • Installs both Backend Server and Local Touchscreen Display
+        • Configures Kodi, Bluetooth Audio, and Kiosk autostart
+
+  4) ❌ Exit</code></pre>
+
+    <h3>Non-Interactive / Scripted Usage</h3>
+    <p>You can also run the installer directly with flags or arguments:</p>
+<pre><code># Install Headless Server (LXC / VM)
+./install.sh --server
+
+# Install Remote Kiosk pointing to your LXC Server IP
+./install.sh --kiosk http://192.168.1.50:80
+
+# Install All-in-One Standalone
+./install.sh --all</code></pre>
+
+    <hr>
+
+    <h2>🐳 Docker Headless Server + Remote Pi Kiosk (Alternative)</h2>
+    <p>You can also run the backend headless via Docker:</p>
+
+    <h3>1. Run Backend via Docker (LXC / x86 / VM)</h3>
+<pre><code>cp config.example.yaml config.yaml
+docker compose up -d</code></pre>
+
+    <h3>2. Connect Raspberry Pi Screen &amp; Audio (HTTP)</h3>
+    <p>On the Raspberry Pi:</p>
+<pre><code>./install.sh --kiosk http://&lt;SERVER_IP&gt;:80</code></pre>
+    <ul>
+      <li><strong>Display</strong>: Chromium renders the full interactive dashboard and ambient screensaver.</li>
+      <li><strong>Sound</strong>: Radio stations and background streams play natively inside the Pi's browser (HTML5 audio) through the Pi's HDMI, 3.5mm jack, or connected Bluetooth speaker.</li>
+    </ul>
+
+    <hr>
+
+    <h2>⚙️ Configuration (<code>config.yaml</code>)</h2>
+    <p>Copy <code>config.example.yaml</code> to <code>config.yaml</code> and configure your devices:</p>
+<pre><code>server:
+  host: "0.0.0.0"
+  port: 80
+
+# SmartLife (Tuya) Devices
+tuya:
+  mode: "local"
+  devices:
+    - id: "bf0123456789abcdef"
+      name: "Living Room Light"
+      ip: "192.168.0.101"
+      local_key: "0123456789abcdef"
+      version: 3.3
+      type: "light" # light, socket, switch
+      room: "Living Room"
+
+# Bluetooth Surround Sound
+bluetooth_audio:
+  enabled: true
+  target_mac: "00:11:22:33:44:55" # MAC of your surround soundbar
+  device_name: "Surround Soundbar"
+  auto_reconnect: true
+  default_volume: 70
+
+# Kodi Integration
+kodi:
+  enabled: true
+  host: "127.0.0.1"
+  port: 8080  # Kodi web server port (must differ from HomeAuto port 80)
+  launch_command: "kodi-standalone"
+
+# Ambient Screensaver
+screensaver:
+  enabled: true
+  idle_timeout_seconds: 120
+  photo_transition_seconds: 15
+  photo_directory: "./frontend/assets/photos"
+  youtube_audio:
+    enabled: true
+    volume: 50</code></pre>
+
+    <h3>💡 How to get Tuya / SmartLife Local Keys?</h3>
+    <p>You can scan your local network for your SmartLife devices using the built-in TinyTuya wizard:</p>
+<pre><code>source venv/bin/activate
+python -m tinytuya wizard</code></pre>
+    <p>This generates <code>devices.json</code> with all Device IDs, IP addresses, and <code>local_key</code>s.</p>
+
+    <hr>
+
+    <h2>🖥️ Running Manually / In Development</h2>
+<pre><code># Activate environment
+source venv/bin/activate
+
+# Start backend server
+python -m backend.main</code></pre>
+    <p>Open your browser at: <code>http://localhost</code> (or <code>http://&lt;raspberry-pi-ip&gt;</code> from your phone/laptop).</p>
+
+    <hr>
+
+    <h2>📺 Touchscreen Chromium Kiosk Mode</h2>
+    <p>The platform includes a dedicated <a href="https://github.com/your-username/homeauto/blob/main/kiosk.sh"><code>kiosk.sh</code></a> launcher compatible with both <strong>X11</strong> and modern Raspberry Pi OS <strong>Wayland (Wayfire / Labwc)</strong> compositors.</p>
+
+    <h3>Starting Kiosk Mode</h3>
+    <ol>
+      <li>
+        <strong>Autostart on Boot (Desktop Session)</strong>:
+        The installer creates <code>~/.config/autostart/homeauto-kiosk.desktop</code>. When the Pi boots into the desktop, the 15" touchscreen automatically starts in fullscreen kiosk mode.
+      </li>
+      <li>
+        <strong>Starting / Testing manually:</strong>
+<pre><code>./kiosk.sh</code></pre>
+      </li>
+      <li>
+        <strong>Or via systemd:</strong>
+<pre><code>systemctl --user restart homeauto.service
+systemctl --user restart homeauto-kiosk.service</code></pre>
+      </li>
+    </ol>
+
+    <hr>
+
+    <h2>📁 Project Architecture</h2>
+<pre><code>homeauto/
+├── config.example.yaml        # Full configuration template
+├── install.sh                 # Raspberry Pi OS auto-installer
+├── requirements.txt           # Python dependencies
+├── backend/
+│   ├── main.py                # FastAPI server &amp; WebSocket hub
+│   ├── config.py              # Configuration manager (YAML/Pydantic)
+│   ├── tuya_manager.py        # SmartLife/Tuya Local Socket &amp; Cloud controller
+│   ├── bt_audio_manager.py    # Bluetooth audio connection &amp; volume manager
+│   ├── kodi_manager.py        # Kodi JSON-RPC API client &amp; launcher
+│   ├── media_player.py        # YouTube / Ambient audio stream manager (yt-dlp/mpv)
+│   ├── screensaver_manager.py # Photo slideshow &amp; ambient data manager
+│   └── system_manager.py      # Pi telemetry (CPU, Temp, Memory, Screen power)
+├── frontend/
+│   ├── index.html             # Touchscreen Dashboard &amp; Web App
+│   ├── css/
+│   │   └── style.css          # Touch-optimized dark glassmorphism theme
+│   └── js/
+│       ├── app.js             # Core UI, router, WebSockets &amp; clock
+│       ├── tuya_cards.js      # Device widgets &amp; controls
+│       ├── screensaver.js     # Screensaver engine &amp; YouTube audio controls
+│       ├── kodi.js            # Kodi launcher &amp; remote D-Pad
+│       └── bt_audio.js        # Bluetooth sound selector &amp; volume
+└── systemd/
+    ├── homeauto.service       # Backend hub systemd service
+    └── homeauto-kiosk.service # Touchscreen Kiosk systemd service</code></pre>
+
+    <hr>
+
+    <h2>📄 License</h2>
+    <p>MIT License. Built for home automation enthusiasts!</p>
+
+    <footer>Made with IBM Bob</footer>
+  </main>
+</body>
+</html>
