@@ -8,10 +8,24 @@ let floorplanEditorSignature = "";
 
 const FLOORPLAN_MIN_SIZE = 0.03;
 
-// The plan for the home selected in the dashboard / admin filter, created on first use
+// Home being edited. Always a single real home: never "all homes", which would mix rooms.
+let floorplanHome = "";
+
+function knownHomes() {
+  return [...new Set((state.devices || []).map(d => d.home).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+}
+
+// Picks the editor's home: keeps the current one if still valid, else the shared filter, else the first home
+function resolveFloorplanHome() {
+  const homes = knownHomes();
+  if (floorplanHome && homes.includes(floorplanHome)) return floorplanHome;
+  const shared = getSelectedHome();
+  floorplanHome = homes.includes(shared) ? shared : (homes[0] || "");
+  return floorplanHome;
+}
+
 function currentHomeName() {
-  const selected = getSelectedHome();
-  return selected === ALL_HOMES ? "" : selected;
+  return resolveFloorplanHome();
 }
 
 function currentHomePlan() {
@@ -23,6 +37,7 @@ function currentHomePlan() {
 
 function homeDevices() {
   const home = currentHomeName();
+  if (!home) return [];
   return (state.devices || []).filter(d => d.home === home);
 }
 
@@ -162,9 +177,10 @@ function initFloorplanEditor() {
     move(e);
   });
 
-  // Home selection is shared with the dashboard filter, so the editor follows it
+  // The editor's own home dropdown. It also updates the shared filter so the dashboard matches.
   document.getElementById("floorplan-home-select")?.addEventListener("change", (e) => {
-    localStorage.setItem(HOME_FILTER_KEY, e.target.value);
+    floorplanHome = e.target.value;
+    localStorage.setItem(HOME_FILTER_KEY, floorplanHome);
     floorplanPendingDeviceId = null;
     renderTuyaDevices(state.devices);
     renderFloorplanEditor();
@@ -191,7 +207,7 @@ function positionBox(el, box) {
 function renderHomeSelect() {
   const select = document.getElementById("floorplan-home-select");
   if (!select) return;
-  const homes = [...new Set((state.devices || []).map(d => d.home).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const homes = knownHomes();
   const current = currentHomeName();
   const key = homes.join("\u0001");
   if (select.dataset.homes !== key) {
