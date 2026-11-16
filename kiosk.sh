@@ -35,6 +35,11 @@ fi
 # HomeAuto server URL: configurable via HOMEAUTO_SERVER env var or 1st arg (e.g. http://192.168.1.100:80)
 # Defaults to local server port from config.yaml (default 80)
 KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$KIOSK_DIR/.kiosk_env" ]; then
+  # Load saved server URL and settings
+  # shellcheck source=/dev/null
+  . "$KIOSK_DIR/.kiosk_env"
+fi
 CUSTOM_SERVER="${HOMEAUTO_SERVER:-$1}"
 
 if [ -n "$CUSTOM_SERVER" ]; then

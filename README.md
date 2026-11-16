@@ -57,9 +57,9 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
 
 ---
 
-## 🚀 Quick Installation (Raspberry Pi OS)
+## 🚀 Interactive Installation (LXC, Raspberry Pi, Debian / Ubuntu)
 
-Run the automated installer on your Raspberry Pi:
+HomeAuto features an interactive installer supporting three deployment scenarios:
 
 ```bash
 # 1. Clone repository
@@ -71,31 +71,54 @@ chmod +x install.sh
 ./install.sh
 ```
 
-The script will:
-- Install Python 3, Kodi, MPV player, Chromium, BlueZ, PulseAudio Bluetooth modules.
-- Set up the Python virtual environment and install dependencies.
-- Create systemd services for auto-starting the server and touchscreen Kiosk mode on boot.
+The installer will prompt you to select your setup:
+
+```
+  1) 📦 Headless Server ONLY (LXC container, Proxmox, VM, NAS, Server)
+        • Installs Python backend, FastAPI, and media APIs (no GUI/Chromium)
+        • Configures & enables background systemd service on port 80
+
+  2) 📺 Remote Touchscreen Kiosk ONLY (Raspberry Pi display)
+        • Installs Chromium kiosk display & autostart
+        • Connects over HTTP to your remote HomeAuto Server (e.g. LXC container)
+        • No local Python server needed on the Pi
+
+  3) 🚀 All-in-One Standalone (Server + Kiosk on Raspberry Pi)
+        • Installs both Backend Server and Local Touchscreen Display
+        • Configures Kodi, Bluetooth Audio, and Kiosk autostart
+
+  4) ❌ Exit
+```
+
+### Non-Interactive / Scripted Usage
+You can also run the installer directly with flags or arguments:
+```bash
+# Install Headless Server (LXC / VM)
+./install.sh --server
+
+# Install Remote Kiosk pointing to your LXC Server IP
+./install.sh --kiosk http://192.168.1.50:80
+
+# Install All-in-One Standalone
+./install.sh --all
+```
 
 ---
 
-## 🐳 Option 2: Docker Headless Server (x86 / Server) + Remote Pi Kiosk
+## 🐳 Docker Headless Server + Remote Pi Kiosk (Alternative)
 
-You can run HomeAuto headless on an **x86 server, NAS, or PC** via Docker, while the **screen and audio** run on a separate Raspberry Pi connected over HTTP.
+You can also run the backend headless via Docker:
 
-### 1. Run Backend on x86 Server (Docker)
+### 1. Run Backend via Docker (LXC / x86 / VM)
 ```bash
-# 1. Create your config.yaml
 cp config.example.yaml config.yaml
-
-# 2. Build and start container
 docker compose up -d
 ```
 
 ### 2. Connect Raspberry Pi Screen & Audio (HTTP)
-On the Raspberry Pi running the touchscreen:
+On the Raspberry Pi:
 ```bash
-# Launch kiosk pointing to your x86 server IP:
-HOMEAUTO_SERVER="http://<X86_SERVER_IP>:80" ./kiosk.sh
+./install.sh --kiosk http://<SERVER_IP>:80
 ```
 - **Display**: Chromium renders the full interactive dashboard and ambient screensaver.
 - **Sound**: Radio stations and background streams play natively inside the Pi's browser (HTML5 audio) through the Pi's HDMI, 3.5mm jack, or connected Bluetooth speaker.

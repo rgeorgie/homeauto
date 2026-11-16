@@ -6,25 +6,33 @@ USER_NAME="$(whoami)"
 
 echo "==> Configuring HomeAuto as user session service for '$USER_NAME'..."
 
+if [ "$EUID" -eq 0 ]; then
+  SUDO=""
+else
+  SUDO="sudo"
+fi
+
 # 0. Allow non-root user services to bind port 80, and move an old 8080 config to port 80
 echo "==> Allowing user services to bind port 80..."
-echo "net.ipv4.ip_unprivileged_port_start=80" | sudo tee /etc/sysctl.d/99-homeauto-port80.conf >/dev/null
-sudo sysctl -q --system >/dev/null || true
+if [ "$EUID" -ne 0 ]; then
+  echo "net.ipv4.ip_unprivileged_port_start=80" | $SUDO tee /etc/sysctl.d/99-homeauto-port80.conf >/dev/null
+  $SUDO sysctl -q --system >/dev/null 2>&1 || true
+fi
 if [ -f "$CURRENT_DIR/config.yaml" ]; then
   sed -i -E '/^server:/,/^[a-z]/ s/^( *port: *)8080( |$)/\180\2/' "$CURRENT_DIR/config.yaml"
 fi
 
 # 1. Stop and clean up old system-level services
 echo "==> Cleaning up system-level services..."
-sudo systemctl stop homeauto.service homeauto-kiosk.service 2>/dev/null || true
-sudo systemctl disable homeauto.service homeauto-kiosk.service 2>/dev/null || true
-sudo rm -f /etc/systemd/system/homeauto.service /etc/systemd/system/homeauto-kiosk.service
-sudo systemctl daemon-reload
+$SUDO systemctl stop homeauto.service homeauto-kiosk.service 2>/dev/null || true
+$SUDO systemctl disable homeauto.service homeauto-kiosk.service 2>/dev/null || true
+$SUDO rm -f /etc/systemd/system/homeauto.service /etc/systemd/system/homeauto-kiosk.service
+$SUDO systemctl daemon-reload 2>/dev/null || true
 
 # 2. Kill any old lingering python backend processes
 echo "==> Stopping any old backend instances..."
 # "[b]ackend.main" keeps pkill from matching its own sudo/shell command line
-sudo pkill -9 -f "[b]ackend\.main" 2>/dev/null || true
+$SUDO pkill -9 -f "[b]ackend\.main" 2>/dev/null || true
 sleep 1
 
 # 2. Enable lingering so user services start at boot without manual login
@@ -112,15 +120,15 @@ EOF
 # 5c. zram compressed swap (much faster than SD-card swap on a 1 GB board)
 echo "==> Enabling zram swap..."
 if ! dpkg -s systemd-zram-generator >/dev/null 2>&1 && ! dpkg -s zram-tools >/dev/null 2>&1; then
-  sudo apt-get install -y systemd-zram-generator >/dev/null 2>&1 || sudo apt-get install -y zram-tools >/dev/null 2>&1 || true
+  $SUDO apt-get install -y systemd-zram-generator >/dev/null 2>&1 || $SUDO apt-get install -y zram-tools >/dev/null 2>&1 || true
 fi
 if dpkg -s systemd-zram-generator >/dev/null 2>&1; then
-  printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\nswap-priority = 100\n' | sudo tee /etc/systemd/zram-generator.conf >/dev/null
-  sudo systemctl daemon-reload
-  sudo systemctl restart systemd-zram-setup@zram0.service 2>/dev/null || true
+  printf '[zram0]\nzram-size = ram / 2\ncompression-algorithm = zstd\nswap-priority = 100\n' | $SUDO tee /etc/systemd/zram-generator.conf >/dev/null
+  $SUDO systemctl daemon-reload 2>/dev/null || true
+  $SUDO systemctl restart systemd-zram-setup@zram0.service 2>/dev/null || true
 fi
-sudo sysctl -q vm.swappiness=100 2>/dev/null || true
-echo "vm.swappiness=100" | sudo tee /etc/sysctl.d/98-homeauto-swap.conf >/dev/null
+$SUDO sysctl -q vm.swappiness=100 2>/dev/null || true
+echo "vm.swappiness=100" | $SUDO tee /etc/sysctl.d/98-homeauto-swap.conf >/dev/null 2>&1 || true
 
 # 6. Reload and start user services
 systemctl --user daemon-reload
