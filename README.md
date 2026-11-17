@@ -63,7 +63,7 @@ HomeAuto features an interactive installer supporting three deployment scenarios
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/your-username/homeauto.git
+git clone https://github.com/rgeorgie/homeauto.git
 cd homeauto
 
 # 2. Make installer executable & run
