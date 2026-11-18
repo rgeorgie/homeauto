@@ -1,44 +1,49 @@
 // Bluetooth Surround Sound Management Component
 
 // Kiosk-only Pi: the page comes from a remote server, but the speaker is paired to the Pi itself.
-// If the Pi agent (backend/pi_agent.py) answers on loopback, all Bluetooth calls go to it instead of the server.
+// kiosk.sh opens the page with ?kiosk=1 (remembered in localStorage). In that case every Bluetooth call goes to the
+// Pi agent (backend/pi_agent.py) on the Pi's loopback - never to the server, which has no access to the Pi's Bluetooth.
+// If the page itself is served from the Pi (all-in-one install), the server IS the Pi and is used directly.
 const BT_AGENT_BASE = "http://127.0.0.1:8765";
-let btAgentActive = false;
+const BT_PAGE_IS_LOCAL = ["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname);
+if (new URLSearchParams(location.search).get("kiosk") === "1") {
+  try { localStorage.setItem("homeauto_kiosk", "1"); } catch (e) { /* storage unavailable */ }
+}
+const BT_USE_AGENT = !BT_PAGE_IS_LOCAL && (() => {
+  try { return localStorage.getItem("homeauto_kiosk") === "1"; } catch (e) { return false; }
+})();
+const BT_AGENT_HINT = "Pi Bluetooth agent not reachable - on the Pi run: systemctl --user status homeauto-agent";
 
 function btUsesAgent() {
-  return btAgentActive;
+  return BT_USE_AGENT;
 }
 
 function btUrl(path) {
-  return (btAgentActive ? BT_AGENT_BASE : "") + path;
+  return (BT_USE_AGENT ? BT_AGENT_BASE : "") + path;
 }
 
-async function detectBtAgent() {
-  try {
-    const res = await fetch(BT_AGENT_BASE + "/api/health", { signal: AbortSignal.timeout(1500) });
-    btAgentActive = res.ok && (await res.json()).agent === true;
-  } catch (e) {
-    btAgentActive = false;
+function renderBtAgentDown() {
+  const badgeEl = document.getElementById("bt-status-badge");
+  if (badgeEl) {
+    badgeEl.textContent = "Pi Bluetooth agent not running";
+    badgeEl.className = "status-pill disconnected";
   }
 }
 
 async function btAgentLoop() {
-  if (!btAgentActive) {
-    await detectBtAgent();
-  } else {
-    try {
-      const res = await fetch(BT_AGENT_BASE + "/api/bluetooth");
-      state.bluetooth = await res.json();
-      renderBluetoothStatus(state.bluetooth);
-    } catch (e) {
-      btAgentActive = false;
-    }
+  try {
+    const res = await fetch(BT_AGENT_BASE + "/api/bluetooth", { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    state.bluetooth = await res.json();
+    renderBluetoothStatus(state.bluetooth);
+  } catch (e) {
+    renderBtAgentDown();
   }
-  setTimeout(btAgentLoop, btAgentActive ? 5000 : 30000);
+  setTimeout(btAgentLoop, 5000);
 }
 
 function initBluetoothController() {
-  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname)) btAgentLoop();
+  if (BT_USE_AGENT) btAgentLoop();
 
   const scanBtn = document.getElementById("btn-scan-bluetooth");
   const disconnectBtn = document.getElementById("btn-bt-disconnect");
@@ -50,10 +55,11 @@ function initBluetoothController() {
       scanBtn.disabled = true;
       try {
         const res = await fetch(btUrl("/api/bluetooth/scan"));
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const devices = await res.json();
         renderBtDevicesList(devices);
       } catch (e) {
-        showToast("Error scanning Bluetooth devices");
+        showToast(BT_USE_AGENT ? BT_AGENT_HINT : "Error scanning Bluetooth devices");
       } finally {
         scanBtn.textContent = "🔍 Scan Paired Devices";
         scanBtn.disabled = false;
@@ -163,6 +169,6 @@ async function connectBtDevice(mac) {
       showToast("Connection failed. Ensure speaker is in pairing mode.");
     }
   } catch (e) {
-    showToast("Error connecting to Bluetooth");
+    showToast(BT_USE_AGENT ? BT_AGENT_HINT : "Error connecting to Bluetooth");
   }
 }

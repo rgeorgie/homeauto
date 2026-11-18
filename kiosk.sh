@@ -81,7 +81,7 @@ exec $CHROMIUM_BIN \
   --disable-infobars \
   --autoplay-policy=no-user-gesture-required \
   --disable-session-crashed-bubble \
-  --disable-features=Translate,OptimizationHints,MediaRouter \
+  --disable-features=Translate,OptimizationHints,MediaRouter,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests \
   --check-for-update-interval=31536000 \
   --password-store=basic \
   --disable-renderer-accessibility \
@@ -103,4 +103,4 @@ exec $CHROMIUM_BIN \
   --enable-features=OverlayScrollbar,TouchEvents \
   --ozone-platform-hint=auto \
   --log-level=3 \
-  --app="${BASE_URL}"
+  --app="${BASE_URL}/?kiosk=1"
