@@ -6,6 +6,8 @@ let currentPhotoIndex = 0;
 let photosList = [];
 let isScreensaverActive = false;
 let idleTimeoutMs = 120000; // default 2 minutes
+let photoTransitionMs = 15000;
+let screensaverEnabled = true;
 
 function initScreensaverEngine() {
   const overlay = document.getElementById("screensaver-overlay");
@@ -35,6 +37,12 @@ function updateScreensaverConfig(config) {
   if (config.idle_timeout_seconds) {
     idleTimeoutMs = config.idle_timeout_seconds * 1000;
   }
+  if (config.photo_transition_seconds) {
+    photoTransitionMs = config.photo_transition_seconds * 1000;
+  }
+  if (config.enabled !== undefined) {
+    screensaverEnabled = Boolean(config.enabled);
+  }
   if (config.photos && config.photos.length > 0) {
     photosList = config.photos;
   }
@@ -44,6 +52,7 @@ function updateScreensaverConfig(config) {
 function resetIdleTimer() {
   if (isScreensaverActive) return; // don't restart timer while already in screensaver
   clearTimeout(screensaverTimeout);
+  if (!screensaverEnabled) return; // disabled: no automatic start (the manual button still works)
   screensaverTimeout = setTimeout(() => {
     startScreensaver();
   }, idleTimeoutMs);
@@ -64,7 +73,7 @@ function startScreensaver() {
     overlay.classList.remove("fireplace");
     // Start photo carousel
     showNextPhoto();
-    photoCarouselInterval = setInterval(showNextPhoto, 15000);
+    photoCarouselInterval = setInterval(showNextPhoto, photoTransitionMs);
   }
 
   // If YouTube auto-play configured, trigger preset

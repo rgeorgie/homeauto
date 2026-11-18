@@ -135,6 +135,8 @@ function initWebSocket() {
         const msg = JSON.parse(event.data);
         if (msg.type === "state_update" || msg.type === "initial_state") {
           applyStateUpdate(msg.data);
+        } else if (msg.type === "config_updated") {
+          onConfigUpdated();
         } else if (msg.type === "floorplan_updated") {
           onFloorplanUpdated(msg.data);
         } else if (msg.type === "camera_event" && typeof onCameraEvent === "function") {
@@ -202,19 +204,35 @@ function applyStateUpdate(data) {
   }
 }
 
-// Weather fetcher
-async function initWeather() {
-  async function fetchWeather() {
-    try {
-      const res = await fetch("/api/weather");
-      if (res.ok) {
-        state.weather = await res.json();
-        renderWeather(state.weather);
-      }
-    } catch (e) {
-      console.debug("Weather load error:", e);
+// Settings were saved in the admin panel: the server already applied them, so re-read what the dashboard
+// and screensaver use. (Screensaver settings are otherwise only sent when the WebSocket connects.)
+async function onConfigUpdated() {
+  try {
+    const res = await fetch("/api/screensaver");
+    if (res.ok) {
+      state.screensaver = await res.json();
+      updateScreensaverConfig(state.screensaver);
     }
+  } catch (e) {
+    console.debug("Screensaver reload error:", e);
   }
+  fetchWeather();
+}
+
+// Weather fetcher
+async function fetchWeather() {
+  try {
+    const res = await fetch("/api/weather");
+    if (res.ok) {
+      state.weather = await res.json();
+      renderWeather(state.weather);
+    }
+  } catch (e) {
+    console.debug("Weather load error:", e);
+  }
+}
+
+async function initWeather() {
   fetchWeather();
   setInterval(fetchWeather, 600000); // 10 mins
 }

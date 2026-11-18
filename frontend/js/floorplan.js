@@ -542,6 +542,11 @@ function renderDashboardFloorplan() {
   plan.rooms.forEach(room => {
     const el = document.createElement("div");
     el.className = "floorplan-room";
+    const hue = floorplanRoomHue(floorplanRoomClimate(room, plan));
+    if (hue !== null) {
+      el.classList.add("temp-colored");
+      el.style.setProperty("--room-hue", hue);
+    }
     if (dashboardRoomName === room.name) el.classList.add("selected");
     el.addEventListener("click", () => {
       dashboardRoomName = dashboardRoomName === room.name ? null : room.name;
@@ -578,11 +583,36 @@ function renderDashboardFloorplan() {
   renderDashboardRoomDevices();
 }
 
+// Current temperature of a room (from a sensor or thermostat placed in it) and the set temperature of a thermostat there, if any
+function floorplanRoomClimate(room, plan) {
+  const placed = homeDevices().filter(d => plan.devices[d.id] && d.current_temperature != null
+    && (d.room || "").trim() === room.name);
+  if (placed.length === 0) return null;
+  const thermostat = placed.find(d => d.target_temperature != null);
+  return {
+    current: parseFloat(placed[0].current_temperature),
+    target: thermostat ? parseFloat(thermostat.target_temperature) : null
+  };
+}
+
+// Room color from current vs set temperature: blue when under, green on target (within 0.5°C), orange to red when over.
+// Rooms without a thermostat compare against COMFORT_TEMP. Returns an HSL hue, or null when the room has no reading.
+const FLOORPLAN_COMFORT_TEMP = 21;
+function floorplanRoomHue(climate) {
+  if (!climate || isNaN(climate.current)) return null;
+  const set = climate.target !== null && !isNaN(climate.target) ? climate.target : FLOORPLAN_COMFORT_TEMP;
+  const diff = climate.current - set;
+  if (Math.abs(diff) <= 0.5) return 130;                       // on target: green
+  const t = Math.min(1, (Math.abs(diff) - 0.5) / 2.5);          // 0..1 over the next 2.5°C
+  return diff < 0 ? Math.round(130 + t * 90) : Math.round(130 - t * 130);  // under: green->blue (220), over: green->red (0)
+}
+
 // Room label: the room name plus a temperature from a sensor or thermostat placed in that room
 function floorplanRoomLabel(room, plan) {
-  const sensor = homeDevices().find(d => plan.devices[d.id] && d.current_temperature != null
-    && (d.room || "").trim() === room.name);
-  return sensor ? `${room.name} · ${parseFloat(sensor.current_temperature).toFixed(1)}°C` : room.name;
+  const climate = floorplanRoomClimate(room, plan);
+  if (!climate) return room.name;
+  const set = climate.target !== null && !isNaN(climate.target) ? ` → ${climate.target.toFixed(1)}°C` : "";
+  return `${room.name} · ${climate.current.toFixed(1)}°C${set}`;
 }
 
 // Chip text: the device name plus its current reading, so the plan is useful at a glance
