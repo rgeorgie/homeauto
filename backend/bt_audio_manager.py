@@ -159,13 +159,16 @@ class BluetoothAudioManager:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _get_sinks)
 
-    async def scan_devices(self) -> List[Dict[str, str]]:
-        """Scans for nearby and paired Bluetooth devices."""
+    async def scan_devices(self, seconds: int = 3) -> List[Dict[str, str]]:
+        """Scans for nearby and paired Bluetooth devices. Devices without a name yet are listed by MAC, after the named ones."""
+        seconds = max(1, min(30, int(seconds)))
+
         def _scan():
             devices_map: Dict[str, str] = {}
+            unnamed: Dict[str, str] = {}
             try:
-                # 1. Trigger quick discovery scan (3s) to find pairing speakers
-                subprocess.run(["bluetoothctl", "--timeout", "3", "scan", "on"], capture_output=True, text=True, timeout=5)
+                # 1. Discovery scan to find speakers in pairing mode (classic BT speakers can take 5-10s to show up)
+                subprocess.run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"], capture_output=True, text=True, timeout=seconds + 4)
             except Exception:
                 pass
 
@@ -174,14 +177,16 @@ class BluetoothAudioManager:
                 res = subprocess.run(["bluetoothctl", "devices"], capture_output=True, text=True, timeout=3)
                 for line in res.stdout.splitlines():
                     parts = line.strip().split(" ", 2)
-                    if len(parts) >= 3 and parts[0] == "Device":
+                    if len(parts) >= 2 and parts[0] == "Device":
                         mac = parts[1].strip()
-                        name = parts[2].strip()
+                        name = parts[2].strip() if len(parts) >= 3 else ""
                         if name and name != mac.replace(":", "-"):
                             devices_map[mac] = name
+                        else:
+                            unnamed[mac] = f"Unknown device ({mac})"
             except Exception as e:
                 logger.error(f"Error scanning BT devices: {e}")
-            return [{"mac": mac, "name": name} for mac, name in devices_map.items()]
+            return [{"mac": mac, "name": name} for mac, name in {**devices_map, **unnamed}.items()]
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _scan)
