@@ -819,9 +819,10 @@ body {
 .floorplan-device {
   position: absolute;
   transform: translate(-50%, -50%);
-  max-width: 140px;
-  padding: 4px 10px;
-  font-size: 12px;
+  max-width: 280px;
+  padding: 8px 20px;
+  font-size: 24px;
+  line-height: 1.2;
   font-weight: 600;
   white-space: nowrap;
   overflow: hidden;
@@ -833,9 +834,15 @@ body {
   cursor: grab;
   touch-action: none;
 }
-.floorplan-device.on { border-color: var(--accent-green); box-shadow: 0 0 10px rgba(16, 185, 129, 0.45); }
-/* Lamp that is on: a soft light halo around the icon */
-.floorplan-device.lamp-on { box-shadow: 0 0 6px 2px rgba(250, 204, 21, 0.55), 0 0 22px 10px rgba(250, 204, 21, 0.3); }
+.floorplan-device.on { border-color: var(--accent-green); box-shadow: 0 0 20px rgba(16, 185, 129, 0.45); }
+/* Lamp that is on: a big, soft circle of light around the icon (bright core, fading outwards) */
+.floorplan-device.lamp-on {
+  border-color: rgba(250, 204, 21, 0.9);
+  box-shadow:
+    0 0 14px 6px rgba(250, 204, 21, 0.75),
+    0 0 50px 30px rgba(250, 204, 21, 0.4),
+    0 0 110px 70px rgba(250, 204, 21, 0.2);
+}
 .floorplan-device.off { color: var(--text-muted); }
 .floorplan-device.offline { opacity: 0.45; border-style: dashed; }
 /* Battery draining: warning tone on the item (amber at 30%, red at 15%), after .off so it stays visible */
@@ -870,4 +877,4 @@ body {
 .floorplan-kind-btn.active { border-color: var(--accent-blue); color: var(--text-main); background: rgba(59, 130, 246, 0.2); }
 .floorplan-device.floorplan-state.on { border-color: var(--accent-green); color: var(--accent-green); }
 .floorplan-device.floorplan-state.warn { border-color: var(--accent-amber); color: var(--accent-amber); }
-.floorplan-device.floorplan-state.alert { border-color: var(--accent-red); color: var(--accent-red); box-shadow: 0 0 10px rgba(239, 68, 68, 0.45); }
+.floorplan-device.floorplan-state.alert { border-color: var(--accent-red); color: var(--accent-red); box-shadow: 0 0 20px rgba(239, 68, 68, 0.45); }
