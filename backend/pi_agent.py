@@ -84,7 +84,7 @@ async def get_bluetooth_status():
 
 
 @app.get("/api/bluetooth/scan")
-async def scan_bluetooth_devices(seconds: int = 10):
+async def scan_bluetooth_devices(seconds: int = 20):
     return await bt_mgr.scan_devices(seconds)
 
 
