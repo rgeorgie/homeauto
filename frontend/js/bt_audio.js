@@ -1,6 +1,45 @@
 // Bluetooth Surround Sound Management Component
 
+// Kiosk-only Pi: the page comes from a remote server, but the speaker is paired to the Pi itself.
+// If the Pi agent (backend/pi_agent.py) answers on loopback, all Bluetooth calls go to it instead of the server.
+const BT_AGENT_BASE = "http://127.0.0.1:8765";
+let btAgentActive = false;
+
+function btUsesAgent() {
+  return btAgentActive;
+}
+
+function btUrl(path) {
+  return (btAgentActive ? BT_AGENT_BASE : "") + path;
+}
+
+async function detectBtAgent() {
+  try {
+    const res = await fetch(BT_AGENT_BASE + "/api/health", { signal: AbortSignal.timeout(1500) });
+    btAgentActive = res.ok && (await res.json()).agent === true;
+  } catch (e) {
+    btAgentActive = false;
+  }
+}
+
+async function btAgentLoop() {
+  if (!btAgentActive) {
+    await detectBtAgent();
+  } else {
+    try {
+      const res = await fetch(BT_AGENT_BASE + "/api/bluetooth");
+      state.bluetooth = await res.json();
+      renderBluetoothStatus(state.bluetooth);
+    } catch (e) {
+      btAgentActive = false;
+    }
+  }
+  setTimeout(btAgentLoop, btAgentActive ? 5000 : 30000);
+}
+
 function initBluetoothController() {
+  if (!["127.0.0.1", "localhost", "::1", "[::1]"].includes(location.hostname)) btAgentLoop();
+
   const scanBtn = document.getElementById("btn-scan-bluetooth");
   const disconnectBtn = document.getElementById("btn-bt-disconnect");
   const volSlider = document.getElementById("bt-volume-slider");
@@ -10,7 +49,7 @@ function initBluetoothController() {
       scanBtn.textContent = "Scanning Bluetooth...";
       scanBtn.disabled = true;
       try {
-        const res = await fetch("/api/bluetooth/scan");
+        const res = await fetch(btUrl("/api/bluetooth/scan"));
         const devices = await res.json();
         renderBtDevicesList(devices);
       } catch (e) {
@@ -24,7 +63,7 @@ function initBluetoothController() {
 
   if (disconnectBtn) {
     disconnectBtn.addEventListener("click", async () => {
-      await fetch("/api/bluetooth/disconnect", { method: "POST" });
+      await fetch(btUrl("/api/bluetooth/disconnect"), { method: "POST" });
       showToast("Bluetooth disconnected");
     });
   }
@@ -32,7 +71,7 @@ function initBluetoothController() {
   if (volSlider) {
     volSlider.addEventListener("input", (e) => {
       const vol = parseInt(e.target.value);
-      fetch("/api/bluetooth/volume", {
+      fetch(btUrl("/api/bluetooth/volume"), {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ volume: vol })
@@ -45,7 +84,7 @@ function initBluetoothController() {
     testSoundBtn.addEventListener("click", async () => {
       showToast("Playing test audio chime on soundbar...");
       try {
-        const res = await fetch("/api/bluetooth/test-sound", { method: "POST" });
+        const res = await fetch(btUrl("/api/bluetooth/test-sound"), { method: "POST" });
         const data = await res.json();
         if (data.status === "ok" || data.success) {
           showToast(`🔊 Chime played via ${data.method || 'soundbar sink'}!`);
@@ -112,7 +151,7 @@ function renderBtDevicesList(devices) {
 async function connectBtDevice(mac) {
   showToast("Connecting to Bluetooth speaker...");
   try {
-    const res = await fetch("/api/bluetooth/connect", {
+    const res = await fetch(btUrl("/api/bluetooth/connect"), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ mac })

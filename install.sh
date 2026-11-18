@@ -143,6 +143,45 @@ setup_zram_swap() {
   fi
 }
 
+setup_pi_agent_service() {
+  # Kiosk-only Pi: small local service so the web UI can scan/pair/route the Pi's own Bluetooth speaker
+  echo "==> Setting up Pi Bluetooth agent (backend/pi_agent.py)..."
+  cd "$CURRENT_DIR"
+  if [ ! -d "venv" ]; then
+    python3 -m venv venv
+  fi
+  "$CURRENT_DIR/venv/bin/pip" install --upgrade pip >/dev/null
+  "$CURRENT_DIR/venv/bin/pip" install fastapi "uvicorn[standard]" pydantic pyyaml
+
+  if [ "$EUID" -ne 0 ]; then
+    loginctl enable-linger "$USER_NAME" 2>/dev/null || true
+    USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$USER_SYSTEMD_DIR"
+    cat > "$USER_SYSTEMD_DIR/homeauto-agent.service" <<EOF
+[Unit]
+Description=HomeAuto Pi Bluetooth Agent
+After=pipewire.service wireplumber.service
+Wants=pipewire.service wireplumber.service
+
+[Service]
+Type=simple
+WorkingDirectory=${CURRENT_DIR}
+ExecStart=${CURRENT_DIR}/venv/bin/python -m backend.pi_agent
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
+EOF
+    systemctl --user daemon-reload
+    systemctl --user enable --now homeauto-agent.service 2>/dev/null || true
+    echo "==> User systemd service 'homeauto-agent.service' enabled (listens on 127.0.0.1:8765)."
+  else
+    echo "==> Run as a normal user (not root) to install the agent service; Bluetooth audio needs the user's PipeWire session."
+  fi
+}
+
 setup_kiosk_service() {
   local server_url="$1"
   echo "==> Setting up Chromium Touchscreen Kiosk..."
@@ -304,12 +343,14 @@ run_scenario_kiosk_only() {
     curl \
     git || $SUDO apt-get install -y chromium xdotool unclutter curl git
 
-  # Optional bluetooth audio packages for local speaker on Pi
-  $SUDO apt-get install -y bluez pulseaudio-utils || true
+  # Bluetooth audio packages for the local speaker on the Pi
+  $SUDO apt-get install -y python3-venv bluez libspa-0.2-bluetooth pulseaudio-utils || true
+  $SUDO apt-get install -y pipewire-audio wireplumber || $SUDO apt-get install -y pulseaudio pulseaudio-module-bluetooth || true
   if [ "$EUID" -ne 0 ]; then
     $SUDO usermod -a -G bluetooth,audio "$USER_NAME" 2>/dev/null || true
   fi
 
+  setup_pi_agent_service
   setup_kiosk_service "$server_url"
 
   echo ""

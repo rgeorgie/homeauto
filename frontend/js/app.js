@@ -179,7 +179,8 @@ function applyStateUpdate(data) {
     updateAmbientDeviceSummary(state.devices);
     onFloorplanStateUpdate();
   }
-  if (data.bluetooth) {
+  // With a Pi agent, Bluetooth state comes from the Pi (see bt_audio.js), not from the server
+  if (data.bluetooth && !btUsesAgent()) {
     state.bluetooth = data.bluetooth;
     renderBluetoothStatus(state.bluetooth);
   }
