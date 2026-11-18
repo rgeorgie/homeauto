@@ -542,10 +542,11 @@ function renderDashboardFloorplan() {
   plan.rooms.forEach(room => {
     const el = document.createElement("div");
     el.className = "floorplan-room";
-    const hue = floorplanRoomHue(floorplanRoomClimate(room, plan));
-    if (hue !== null) {
+    const tint = floorplanRoomTint(floorplanRoomClimate(room, plan));
+    if (tint) {
       el.classList.add("temp-colored");
-      el.style.setProperty("--room-hue", hue);
+      el.style.setProperty("--room-hue", tint.hue);
+      el.style.setProperty("--room-sat", `${tint.sat}%`);
     }
     if (dashboardRoomName === room.name) el.classList.add("selected");
     el.addEventListener("click", () => {
@@ -595,16 +596,18 @@ function floorplanRoomClimate(room, plan) {
   };
 }
 
-// Room color from current vs set temperature: blue when under, green on target (within 0.5°C), orange to red when over.
-// Rooms without a thermostat compare against COMFORT_TEMP. Returns an HSL hue, or null when the room has no reading.
+// Room tint from current vs set temperature: a calm neutral slate on target (within 0.5°C), turning steadily bluer
+// when under and warmer (orange-red) when over. Rooms without a thermostat compare against COMFORT_TEMP.
+// Returns {hue, sat} for HSL, or null when the room has no reading.
 const FLOORPLAN_COMFORT_TEMP = 21;
-function floorplanRoomHue(climate) {
+function floorplanRoomTint(climate) {
   if (!climate || isNaN(climate.current)) return null;
   const set = climate.target !== null && !isNaN(climate.target) ? climate.target : FLOORPLAN_COMFORT_TEMP;
   const diff = climate.current - set;
-  if (Math.abs(diff) <= 0.5) return 130;                       // on target: green
-  const t = Math.min(1, (Math.abs(diff) - 0.5) / 2.5);          // 0..1 over the next 2.5°C
-  return diff < 0 ? Math.round(130 + t * 90) : Math.round(130 - t * 130);  // under: green->blue (220), over: green->red (0)
+  const t = Math.min(1, Math.max(0, (Math.abs(diff) - 0.5) / 2.5));   // 0 on target .. 1 at 3°C away
+  const sat = Math.round(10 + t * 50);                                  // 10% (almost grey) .. 60%
+  if (t === 0) return { hue: 210, sat };
+  return { hue: diff < 0 ? 215 : 15, sat };
 }
 
 // Room label: the room name plus a temperature from a sensor or thermostat placed in that room

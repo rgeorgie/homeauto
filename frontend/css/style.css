@@ -795,9 +795,9 @@ body {
 /* Dashboard: rooms are tappable to show their devices below the plan */
 .floorplan-canvas.readonly .floorplan-room { pointer-events: auto; cursor: pointer; }
 .floorplan-canvas.readonly .floorplan-room.selected { background: rgba(59, 130, 246, 0.3); border-color: var(--accent-blue, #3b82f6); }
-/* Room tinted by its temperature (hue set from JS: blue = under the set temperature, green = on target, red = over) */
-.floorplan-room.temp-colored { background: hsla(var(--room-hue), 80%, 50%, 0.22); border-color: hsla(var(--room-hue), 80%, 55%, 0.75); }
-.floorplan-canvas.readonly .floorplan-room.temp-colored.selected { background: hsla(var(--room-hue), 80%, 50%, 0.4); border-color: hsl(var(--room-hue), 85%, 62%); }
+/* Room tinted by its temperature (hue + saturation set from JS: neutral on target, bluer when under, warmer when over) */
+.floorplan-room.temp-colored { background: hsla(var(--room-hue), var(--room-sat), 55%, 0.22); border-color: hsla(var(--room-hue), var(--room-sat), 62%, 0.7); }
+.floorplan-canvas.readonly .floorplan-room.temp-colored.selected { background: hsla(var(--room-hue), var(--room-sat), 55%, 0.38); border-color: hsl(var(--room-hue), var(--room-sat), 70%); }
 .floorplan-room-label {
   position: absolute;
   top: 6px;
