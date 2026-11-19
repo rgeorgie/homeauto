@@ -179,6 +179,8 @@ function applyStateUpdate(data) {
     renderTuyaDevices(state.devices);
     if (typeof checkDoorbellRings === "function") checkDoorbellRings(state.devices);
     updateAmbientDeviceSummary(state.devices);
+    if (typeof onEnergyStateUpdate === "function") onEnergyStateUpdate(state.devices);
+
     onFloorplanStateUpdate();
   }
   // With a Pi agent, Bluetooth state comes from the Pi (see bt_audio.js), not from the server

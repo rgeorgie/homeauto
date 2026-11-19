@@ -686,6 +686,8 @@ function createDeviceCardHtml(dev) {
         `}
       </div>
 
+      ${typeof powerReadoutHtml === "function" ? powerReadoutHtml(dev) : ""}
+
       ${isLight && channels.length < 2 ? `
         <div class="slider-container">
           <div class="slider-label">

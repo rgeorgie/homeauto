@@ -23,6 +23,7 @@ from backend import pi_control
 from backend import camera_stream
 from backend.camera_events import CameraEventLog
 from backend.push_history import PushHistory
+from backend.energy import EnergyLog, RANGES as ENERGY_RANGES
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(name)s: %(message)s")
 logger = logging.getLogger("HomeAuto.Server")
@@ -35,6 +36,7 @@ kodi_mgr = KodiManager(config.kodi)
 kodi_mgr.own_port = config.server.port
 media_player = MediaPlayer(config.screensaver.youtube_audio)
 screensaver_mgr = ScreensaverManager(config.screensaver)
+energy_log = EnergyLog()
 
 # WebSocket connection manager
 class ConnectionManager:
@@ -65,6 +67,7 @@ async def background_telemetry_and_sync():
     while True:
         try:
             device_states = await tuya_mgr.get_all_states()
+            energy_log.record(device_states)
             bt_status = await bt_mgr.check_connection_status()
             kodi_status = await kodi_mgr.get_status()
             telemetry = SystemManager.get_telemetry()
@@ -102,6 +105,7 @@ async def lifespan(app: FastAPI):
     # Shutdown
     logger.info("Shutting down HomeAuto platform services...")
     sync_task.cancel()
+    energy_log.flush()
     tuya_mgr.stop_background_service()
     bt_mgr.stop_background_service()
     media_player.stop()
@@ -322,6 +326,19 @@ async def _broadcast_push_event(entry: Dict[str, Any]):
 
 push_log = PushHistory(lambda dev_id: (tuya_mgr.device_states.get(dev_id) or {}).get("name") or dev_id, _broadcast_push_event)
 tuya_mgr.on_push = lambda dev_id, biz, codes: asyncio.ensure_future(push_log.record(dev_id, biz, codes))
+
+@app.get("/api/energy")
+async def get_energy(range: str = "day"):
+    """Live power of every metering device plus the usage history for a range (day, week, month, year)."""
+    if range not in ENERGY_RANGES:
+        raise HTTPException(status_code=400, detail=f"range must be one of {', '.join(ENERGY_RANGES)}")
+    states = await tuya_mgr.get_all_states()
+    live = [{"id": d["id"], "name": d.get("name"), "room": d.get("room"), "home": d.get("home"),
+             "online": d.get("online", False), "power_w": d["power_w"], "energy_kwh": d.get("energy_kwh")}
+            for d in states if d.get("power_w") is not None]
+    history = await asyncio.get_event_loop().run_in_executor(None, energy_log.summary, range)
+    return {"live": live, "total_w": round(sum(d["power_w"] for d in live if d["online"]), 1),
+            "price_per_kwh": config.energy.price_per_kwh, "currency": config.energy.currency, **history}
 
 @app.get("/api/push-history")
 async def list_push_history():

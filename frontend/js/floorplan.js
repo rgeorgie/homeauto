@@ -613,9 +613,15 @@ function floorplanRoomTint(climate) {
 // Room label: the room name plus a temperature from a sensor or thermostat placed in that room
 function floorplanRoomLabel(room, plan) {
   const climate = floorplanRoomClimate(room, plan);
-  if (!climate) return room.name;
-  const set = climate.target !== null && !isNaN(climate.target) ? ` → ${climate.target.toFixed(1)}°C` : "";
-  return `${room.name} · ${climate.current.toFixed(1)}°C${set}`;
+  let label = room.name;
+  if (climate) {
+    const set = climate.target !== null && !isNaN(climate.target) ? ` → ${climate.target.toFixed(1)}°C` : "";
+    label += ` · ${climate.current.toFixed(1)}°C${set}`;
+  }
+  // Power drawn by metering plugs in the room
+  const watts = typeof roomPowerWatts === "function" ? roomPowerWatts(homeDevices().filter(d => plan.devices[d.id]), room.name) : null;
+  if (watts !== null) label += ` · ⚡ ${formatWatts(watts)}`;
+  return label;
 }
 
 // Chip text: the device name plus its current reading, so the plan is useful at a glance
@@ -631,6 +637,9 @@ function floorplanDeviceLabel(dev) {
     return `${dev.name} · ${parseFloat(dev.current_temperature).toFixed(1)}°C${heat}`;
   }
   if (dev.type === "sensor" || dev.type === "climate" || dev.type === "camera") return dev.name;
+  if (dev.power_w !== undefined && dev.power_w !== null) {
+    return `${dev.name} · ${dev.is_on ? "ON" : "OFF"} · ${formatWatts(dev.power_w)}`;
+  }
   return `${dev.name} · ${dev.is_on ? "ON" : "OFF"}`;
 }
 

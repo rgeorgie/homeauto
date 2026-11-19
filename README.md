@@ -44,6 +44,12 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
 6. **⚙️ Hardware Telemetry**
    - Live monitoring of Raspberry Pi CPU usage, CPU Temperature (`vcgencmd`), RAM utilization, and IP address.
 
+7. **⚡ Energy Monitoring**
+   - Plugs/sockets with energy monitoring report live watts, volts, amps and total kWh (shown on their card, the dashboard "Power now" tile and per room on the floor plan).
+   - The server keeps a history (`data/energy.db`) and the **Energy** view charts usage per day/week/month/year with a per-device breakdown.
+   - Set your price per kWh under **Admin → Energy** to see the cost. Plugs without a meter report nothing.
+
+
 ---
 
 ## 🛠️ Hardware Requirements

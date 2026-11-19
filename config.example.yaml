@@ -117,3 +117,9 @@ weather:
   latitude: 51.5074
   longitude: -0.1278
   units: "celsius" # celsius or fahrenheit
+
+# Energy: metering plugs report their power draw; set your price to see the cost (0 = no cost shown)
+energy:
+  price_per_kwh: 0.0
+  currency: "€"
+

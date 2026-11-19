@@ -308,6 +308,55 @@ def extract_tuya_climate_data(dps: Dict[str, Any], dev_type: str = "climate") ->
 BATTERY_STATE_LABELS = {"low": "Low", "middle": "Medium", "high": "High"}
 MAX_SWITCH_CHANNELS = 8
 
+# Types that can never be a power meter: their DP 17-20 mean something else (temperatures, work state, ...)
+NON_METER_TYPES = ("climate", "sensor", "ac", "camera", "pet_feeder")
+
+
+def extract_power_data(values: Dict[str, Any], cloud: bool = False, dev_type: str = "") -> Optional[Dict[str, Any]]:
+    """
+    Reads the energy-monitoring values of a smart plug / socket / switch, or None when the device has no meter.
+    Standard Tuya data points (raw values): cur_power = DP 19 in 0.1 W, cur_voltage = DP 20 in 0.1 V,
+    cur_current = DP 18 in mA, add_ele = DP 17 in 0.001 kWh. Local DPS use the numbers, the cloud the codes.
+    Returns {power_w, voltage_v, current_a, energy_kwh} (each None when not reported).
+    """
+    if dev_type in NON_METER_TYPES:
+        return None
+
+    def num(key: str) -> Optional[float]:
+        v = values.get(key)
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+    if cloud:
+        raw_p, raw_v, raw_i, raw_e = num("cur_power"), num("cur_voltage"), num("cur_current"), num("add_ele")
+    else:
+        raw_p, raw_v, raw_i, raw_e = num("19"), num("20"), num("18"), num("17")
+        # Local DPS carry no names, so only trust the layout of a real meter: power plus voltage or current
+        if raw_p is None or (raw_v is None and raw_i is None):
+            return None
+    if raw_p is None:
+        return None
+
+    voltage = None if raw_v is None else (raw_v / 10.0 if raw_v > 600 else raw_v)   # 2301 -> 230.1 V, 230 -> 230 V
+    current = None if raw_i is None else raw_i / 1000.0
+    power = raw_p / 10.0
+    if voltage and current and current > 0.05:
+        # Some models report whole watts instead of 0.1 W: use the scale that matches voltage x current
+        expected = voltage * current
+        if abs(raw_p - expected) < abs(power - expected):
+            power = raw_p
+    return {
+        "power_w": round(power, 1),
+        "voltage_v": None if voltage is None else round(voltage, 1),
+        "current_a": None if current is None else round(current, 3),
+        "energy_kwh": None if raw_e is None else round(raw_e / 1000.0, 3),
+    }
+
+
+def apply_power_to_state(state: Dict[str, Any], power: Optional[Dict[str, Any]]):
+    """Stores (or clears) the meter readings on a device state."""
+    for key in ("power_w", "voltage_v", "current_a", "energy_kwh"):
+        state[key] = power[key] if power else None
+
 
 def extract_motion_data(dps: Dict[str, Any], category: str = "") -> Optional[Dict[str, Any]]:
     """
@@ -838,6 +887,12 @@ class TuyaManager:
         if switch_vals:
             is_on = any(switch_vals)
         climate_data = extract_tuya_climate_data(dps, dev_type=state.get("type", "climate"))
+        power = extract_power_data(dps, False, state.get("type", ""))
+        if power:
+            # DP 17-20 of a meter are not temperatures: the climate scan above must not report them as such
+            climate_data.update({"current_temperature": None, "target_temperature": None, "target_dps_key": None,
+                                 "humidity": None, "battery": None})
+        apply_power_to_state(state, power)
 
         # Motion detector (state + battery only) and multi-line switches (one entry per line)
         motion = extract_motion_data(dps, state.get("category", ""))
@@ -993,6 +1048,7 @@ class TuyaManager:
             state["contact_open"] = contact
             state["battery_state"] = BATTERY_STATE_LABELS.get(str(codes.get("battery_state", "")).lower())
             cur = hum = None
+        apply_power_to_state(state, extract_power_data(codes, True, state.get("type", "")))
         if state.get("type") not in ("sensor", "climate", "pet_feeder", "camera"):
             state["channels"] = extract_switch_channels(codes, cloud=True)
         if (state.get("category") or "").lower() == "kt" or state.get("type") == "ac":

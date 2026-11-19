@@ -454,6 +454,12 @@ function populateAdminFields(cfg) {
     document.getElementById("weather-units").value = cfg.weather.units || "celsius";
   }
 
+  // Energy
+  if (cfg.energy) {
+    document.getElementById("energy-price").value = cfg.energy.price_per_kwh || 0;
+    document.getElementById("energy-currency").value = cfg.energy.currency || "€";
+  }
+
   // Server
   if (cfg.server) {
     document.getElementById("server-port").value = cfg.server.port || 80;
@@ -645,6 +651,10 @@ async function saveFullConfig() {
       latitude: parseFloat(document.getElementById("weather-lat").value || "51.5074"),
       longitude: parseFloat(document.getElementById("weather-lon").value || "-0.1278"),
       units: document.getElementById("weather-units").value || "celsius"
+    },
+    energy: {
+      price_per_kwh: Math.max(0, parseFloat(document.getElementById("energy-price").value) || 0),
+      currency: (document.getElementById("energy-currency").value || "€").trim()
     }
   };
 

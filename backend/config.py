@@ -72,6 +72,10 @@ class ScreensaverConfig(BaseModel):
     youtube_audio: YouTubeAudioConfig = Field(default_factory=YouTubeAudioConfig)
     widgets: ScreensaverWidgetsConfig = Field(default_factory=ScreensaverWidgetsConfig)
 
+class EnergyConfig(BaseModel):
+    price_per_kwh: float = 0.0 # 0 = no cost shown
+    currency: str = "€"
+
 class WeatherConfig(BaseModel):
     latitude: float = 51.5074
     longitude: float = -0.1278
@@ -90,6 +94,7 @@ class AppConfig(BaseModel):
     kodi: KodiConfig = Field(default_factory=KodiConfig)
     screensaver: ScreensaverConfig = Field(default_factory=ScreensaverConfig)
     weather: WeatherConfig = Field(default_factory=WeatherConfig)
+    energy: EnergyConfig = Field(default_factory=EnergyConfig)
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_CONFIG_PATH = os.path.join(PROJECT_ROOT, "config.yaml")
