@@ -517,11 +517,27 @@ function renderDashboardRoomDevices() {
   bindDeviceControls(devs);
 }
 
+// Full-screen view of the dashboard plan (a fixed overlay, so it survives re-renders on every state push)
+let dashboardFloorplanFullscreen = false;
+
+function setDashboardFloorplanFullscreen(on) {
+  dashboardFloorplanFullscreen = on;
+  document.body.classList.toggle("floorplan-fs", on);
+  renderDashboardFloorplan();
+}
+
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && dashboardFloorplanFullscreen) setDashboardFloorplanFullscreen(false);
+});
+
 function renderDashboardFloorplan() {
   const container = document.getElementById("dashboard-floorplan");
   if (!container) return;
   const plan = currentHomePlan();
   if (!plan || plan.rooms.length === 0) {
+    dashboardFloorplanFullscreen = false;
+    document.body.classList.remove("floorplan-fs");
+    container.classList.remove("fullscreen");
     container.style.display = "none";
     container.replaceChildren();
     dashboardRoomName = null;
@@ -529,15 +545,29 @@ function renderDashboardFloorplan() {
     return;
   }
   container.style.display = "";
+  container.classList.toggle("fullscreen", dashboardFloorplanFullscreen);
 
   const canvas = document.createElement("div");
   canvas.className = "floorplan-canvas readonly";
   canvas.addEventListener("click", (e) => {
-    // Clicking empty plan area clears the room selection
-    if (e.target === canvas) {
-      dashboardRoomName = null;
-      renderDashboardRoomDevices();
+    if (e.target !== canvas) return;
+    if (!dashboardFloorplanFullscreen) {
+      // Tapping the plan opens it full screen
+      setDashboardFloorplanFullscreen(true);
+      return;
     }
+    // Full screen: clicking empty plan area clears the room selection
+    dashboardRoomName = null;
+    renderDashboardFloorplan();
+  });
+  const fsBtn = document.createElement("button");
+  fsBtn.type = "button";
+  fsBtn.className = "floorplan-fs-btn";
+  fsBtn.textContent = dashboardFloorplanFullscreen ? "✕" : "⛶";
+  fsBtn.title = dashboardFloorplanFullscreen ? "Close full screen" : "Full screen";
+  fsBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    setDashboardFloorplanFullscreen(!dashboardFloorplanFullscreen);
   });
   plan.rooms.forEach(room => {
     const el = document.createElement("div");
@@ -550,6 +580,12 @@ function renderDashboardFloorplan() {
     }
     if (dashboardRoomName === room.name) el.classList.add("selected");
     el.addEventListener("click", () => {
+      if (!dashboardFloorplanFullscreen) {
+        // Tapping a room opens the plan full screen with that room selected
+        dashboardRoomName = room.name;
+        setDashboardFloorplanFullscreen(true);
+        return;
+      }
       dashboardRoomName = dashboardRoomName === room.name ? null : room.name;
       renderDashboardFloorplan();
     });
@@ -580,7 +616,7 @@ function renderDashboardFloorplan() {
     });
     canvas.appendChild(el);
   });
-  container.replaceChildren(canvas);
+  container.replaceChildren(canvas, fsBtn);
   renderDashboardRoomDevices();
 }
 
