@@ -13,6 +13,8 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
 
 2. **📱 15" Touchscreen Optimized Interface**
    - Sleek dark OLED/glassmorphism UI with large touch targets.
+   - Responsive layout: adapts from the 15" kiosk down to tablets and phones.
+   - **Floor plan** on the dashboard: tap it (or a room) to open it full screen; labels and device chips scale with the plan. Close with the ✕ button or `Esc`.
    - Works in full-screen **Chromium Kiosk Mode** on the 15" touchscreen display.
    - Real-time reactive state updates over WebSockets (instant sync between touchscreen and phone/laptop browsers).
 
@@ -36,15 +38,18 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
    - Live "Now Playing" playback banner and media controls.
    - Full touch D-Pad remote control (Up, Down, Left, Right, OK, Back, Home, Menu).
 
-5. **🔊 Bluetooth Surround Sound Audio Routing**
+6. **🔊 Bluetooth Surround Sound Audio Routing**
    - Auto-reconnect supervisor for your Bluetooth soundbar or surround speaker setup.
    - Real-time volume slider and master sink control.
    - Device scanning and pairing interface.
 
-6. **⚙️ Hardware Telemetry**
+7. **📲 AirPlay Screen Mirroring**
+   - **📲 Screen Mirroring** button on the dashboard (Pi's own screen only) turns the Pi into an AirPlay receiver for iPhone / iPad / Mac. See [Screen Mirroring](#-screen-mirroring-airplay--uxplay).
+
+8. **⚙️ Hardware Telemetry**
    - Live monitoring of Raspberry Pi CPU usage, CPU Temperature (`vcgencmd`), RAM utilization, and IP address.
 
-7. **⚡ Energy Monitoring**
+9. **⚡ Energy Monitoring**
    - Plugs/sockets with energy monitoring report live watts, volts, amps and total kWh (shown on their card, the dashboard "Power now" tile and per room on the floor plan).
    - The server keeps a history (`data/energy.db`) and the **Energy** view charts usage per day/week/month/year with a per-device breakdown.
    - Set your price per kWh under **Admin → Energy** to see the cost. Plugs without a meter report nothing.
@@ -221,13 +226,45 @@ The platform includes a dedicated [`kiosk.sh`](kiosk.sh:1) launcher compatible w
    systemctl --user restart homeauto-kiosk.service
    ```
 
-### 📲 Screen Mirroring (AirPlay / RPiPlay)
+---
 
-`./install.sh --kiosk` (and `--all`) also installs an AirPlay receiver ([RPiPlay](https://github.com/FD-/RPiPlay), with [UxPlay](https://github.com/FDH2/UxPlay) as fallback) and the `homeauto-rpiplay.service` user service. The dashboard has a **📲 Screen Mirroring** button (shown on the Pi's own screen only):
+## 📲 Screen Mirroring (AirPlay / UxPlay)
 
-1. Tap the button. The kiosk browser closes and the Pi waits for a connection as **HomeAuto** (override the name with `HOMEAUTO_AIRPLAY_NAME`, see [`rpiplay.sh`](rpiplay.sh:1)).
-2. On the iPhone / iPad / Mac open *Screen Mirroring* and pick **HomeAuto**.
-3. The dashboard returns by itself after 30 minutes (`RuntimeMaxSec` in the service), or immediately with `systemctl --user stop homeauto-rpiplay.service` (e.g. over SSH).
+`./install.sh --kiosk` (and `--all`) installs an AirPlay receiver and the `homeauto-rpiplay.service` user service. The receiver is [UxPlay](https://github.com/FDH2/UxPlay) (works on current Raspberry Pi OS); the original [RPiPlay](https://github.com/FD-/RPiPlay) is only built from source as a fallback when the `uxplay` package isn't available, and it only runs on the old Pi graphics stack.
+
+The dashboard shows a **📲 Screen Mirroring** button on the Pi's own screen only (hidden when the dashboard is opened from another device):
+
+1. Tap the button. The kiosk browser closes and the Pi waits for a connection as **HomeAuto** (override the name with `HOMEAUTO_AIRPLAY_NAME`).
+2. On the iPhone / iPad / Mac open *Screen Mirroring* and pick **HomeAuto**. The device must be on the same network as the Pi.
+3. A red **✕ Exit mirroring** button floats in the top-right corner of the screen. Tap it to stop mirroring and bring the dashboard back.
+4. Without tapping, the dashboard returns by itself after 30 minutes (`RuntimeMaxSec` in the service), or immediately with `systemctl --user stop homeauto-rpiplay.service` (e.g. over SSH).
+
+On a kiosk-only install the button talks to the Pi agent (`homeauto-agent`, port 8765). After updating, restart it: `systemctl --user restart homeauto-agent`.
+
+### Manual install / update on the Pi
+```bash
+git pull
+sudo apt install -y uxplay avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-x \
+  python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 libgtk-layer-shell0   # last 4: the Exit button
+```
+
+### Settings
+Extra UxPlay options go into `~/homeauto/.kiosk_env`, for example to force the video and audio output:
+```bash
+export HOMEAUTO_UXPLAY_ARGS="-vs kmssink -as alsasink"
+```
+
+### Troubleshooting
+```bash
+systemctl --user status homeauto-rpiplay
+journalctl --user -u homeauto-rpiplay -n 30 --no-pager
+```
+- **Button says it stopped right after starting**: the message contains the last log lines. `rpiplay` exiting immediately means RPiPlay can't run on this Pi OS: install `uxplay`.
+- **"HomeAuto" doesn't show up on the iPhone / Mac**: check `systemctl status avahi-daemon`, that both devices are on the same subnet (no guest Wi-Fi / client isolation) and that the firewall allows mDNS (UDP 5353).
+- **Black screen or no sound**: try another sink through `HOMEAUTO_UXPLAY_ARGS` (`-vs waylandsink`, `-vs kmssink`, `-as alsasink`).
+- **No Exit button**: look for `mirroring_exit: GTK not available` in the journal and install the GTK packages above. Without `gir1.2-gtklayershell-0.1` the button can end up under the video on Wayland.
+- **Button gives a 404 / "agent is outdated"**: `systemctl --user restart homeauto-agent`.
 
 ---
 
@@ -237,6 +274,9 @@ The platform includes a dedicated [`kiosk.sh`](kiosk.sh:1) launcher compatible w
 homeauto/
 ├── config.example.yaml        # Full configuration template
 ├── install.sh                 # Raspberry Pi OS auto-installer
+├── kiosk.sh                   # Chromium kiosk launcher
+├── rpiplay.sh                 # AirPlay receiver launcher (UxPlay / RPiPlay)
+├── mirroring_exit.py          # On-screen "Exit mirroring" button (GTK)
 ├── requirements.txt           # Python dependencies
 ├── backend/
 │   ├── main.py                # FastAPI server & WebSocket hub
@@ -246,17 +286,21 @@ homeauto/
 │   ├── kodi_manager.py        # Kodi JSON-RPC API client & launcher
 │   ├── media_player.py        # YouTube / Ambient audio stream manager (yt-dlp/mpv)
 │   ├── screensaver_manager.py # Photo slideshow & ambient data manager
-│   └── system_manager.py      # Pi telemetry (CPU, Temp, Memory, Screen power)
+│   ├── system_manager.py      # Pi telemetry (CPU, Temp, Memory, Screen power)
+│   ├── pi_control.py          # Pi controls: Wi-Fi, Bluetooth power, desktop, power, screen mirroring
+│   └── pi_agent.py            # Pi-side agent (127.0.0.1:8765) for kiosk-only installs
 ├── frontend/
 │   ├── index.html             # Touchscreen Dashboard & Web App
 │   ├── css/
-│   │   └── style.css          # Touch-optimized dark glassmorphism theme
+│   │   └── style.css          # Touch-optimized dark glassmorphism theme, responsive rules
 │   └── js/
 │       ├── app.js             # Core UI, router, WebSockets & clock
 │       ├── tuya_cards.js      # Device widgets & controls
+│       ├── floorplan.js       # Floor plan editor & dashboard plan (full screen)
 │       ├── screensaver.js     # Screensaver engine & YouTube audio controls
 │       ├── kodi.js            # Kodi launcher & remote D-Pad
-│       └── bt_audio.js        # Bluetooth sound selector & volume
+│       ├── bt_audio.js        # Bluetooth sound selector & volume
+│       └── mirroring.js       # Screen Mirroring dashboard button
 └── systemd/
     ├── homeauto.service       # Backend hub systemd service
     └── homeauto-kiosk.service # Touchscreen Kiosk systemd service
