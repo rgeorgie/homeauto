@@ -20,10 +20,16 @@ export PATH="/usr/local/bin:$PATH"
 
 echo "Session: DISPLAY=$DISPLAY WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-none} XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
 
+KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# On-screen "Exit mirroring" button above the video (system python3 for GTK; stops with the service)
+if [ -x /usr/bin/python3 ]; then
+  /usr/bin/python3 "$KIOSK_DIR/mirroring_exit.py" &
+fi
+
 if command -v uxplay >/dev/null 2>&1; then
   # Fullscreen video; the sink is picked by GStreamer (waylandsink / kmssink / ximagesink) unless HOMEAUTO_UXPLAY_ARGS is set
   # in ~/homeauto/.kiosk_env, e.g.  export HOMEAUTO_UXPLAY_ARGS="-vs kmssink -as alsasink"
-  KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
   # shellcheck source=/dev/null
   [ -f "$KIOSK_DIR/.kiosk_env" ] && . "$KIOSK_DIR/.kiosk_env"
   # shellcheck disable=SC2086

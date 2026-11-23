@@ -192,6 +192,9 @@ setup_rpiplay() {
   # mDNS responder (the device is found through Bonjour) + GStreamer for video/audio output
   $SUDO apt-get install -y avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
     gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-x || true
+  # GTK for the on-screen "Exit mirroring" button (gtk-layer-shell lets it float above the video on Wayland)
+  $SUDO apt-get install -y python3-gi gir1.2-gtk-3.0 || true
+  $SUDO apt-get install -y gir1.2-gtklayershell-0.1 libgtk-layer-shell0 || true
   $SUDO systemctl enable --now avahi-daemon 2>/dev/null || true
 
   if ! command -v uxplay >/dev/null 2>&1 && ! $SUDO apt-get install -y uxplay; then
