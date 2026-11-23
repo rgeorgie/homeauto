@@ -183,31 +183,34 @@ EOF
 }
 
 setup_rpiplay() {
-  # AirPlay screen mirroring (RPiPlay) for the dashboard's "Screen Mirroring" button
-  echo "==> Setting up AirPlay screen mirroring (RPiPlay)..."
+  # AirPlay screen mirroring for the dashboard's "Screen Mirroring" button.
+  # UxPlay (maintained fork of RPiPlay, GStreamer based) works on current Raspberry Pi OS; the original RPiPlay
+  # targets the old Pi graphics stack and is only built as a fallback when UxPlay isn't packaged.
+  echo "==> Setting up AirPlay screen mirroring (UxPlay / RPiPlay)..."
   chmod +x "$CURRENT_DIR/rpiplay.sh"
 
-  if ! command -v rpiplay >/dev/null 2>&1 && [ ! -x /usr/local/bin/rpiplay ] && ! command -v uxplay >/dev/null 2>&1; then
-    # mDNS responder (the device is found through Bonjour) + GStreamer for video/audio output
-    $SUDO apt-get install -y avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
-      gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl || true
-    $SUDO systemctl enable --now avahi-daemon 2>/dev/null || true
+  # mDNS responder (the device is found through Bonjour) + GStreamer for video/audio output
+  $SUDO apt-get install -y avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+    gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-x || true
+  $SUDO systemctl enable --now avahi-daemon 2>/dev/null || true
 
-    # Build RPiPlay from source (not packaged in Raspberry Pi OS)
-    if $SUDO apt-get install -y build-essential cmake git libavahi-compat-libdnssd-dev libplist-dev libssl-dev \
-         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev; then
-      local build_dir
-      build_dir="$(mktemp -d)"
-      if git clone --depth 1 https://github.com/FD-/RPiPlay.git "$build_dir/RPiPlay" \
-         && (cd "$build_dir/RPiPlay" && mkdir build && cd build && cmake .. && make -j2 && $SUDO make install); then
-        echo "==> RPiPlay built and installed."
+  if ! command -v uxplay >/dev/null 2>&1 && ! $SUDO apt-get install -y uxplay; then
+    echo "==> uxplay package not available; trying RPiPlay from source..."
+    if ! command -v rpiplay >/dev/null 2>&1 && [ ! -x /usr/local/bin/rpiplay ]; then
+      if $SUDO apt-get install -y build-essential cmake git libavahi-compat-libdnssd-dev libplist-dev libssl-dev \
+           libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev; then
+        local build_dir
+        build_dir="$(mktemp -d)"
+        if git clone --depth 1 https://github.com/FD-/RPiPlay.git "$build_dir/RPiPlay" \
+           && (cd "$build_dir/RPiPlay" && mkdir build && cd build && cmake .. && make -j2 && $SUDO make install); then
+          echo "==> RPiPlay built and installed."
+        else
+          echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
+        fi
+        rm -rf "$build_dir"
       else
-        echo "==> RPiPlay build failed, trying UxPlay (same AirPlay protocol) from the package manager..."
-        $SUDO apt-get install -y uxplay || echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
+        echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
       fi
-      rm -rf "$build_dir"
-    else
-      $SUDO apt-get install -y uxplay || echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
     fi
   fi
 

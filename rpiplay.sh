@@ -3,8 +3,8 @@
 # AirPlay screen-mirroring receiver for the HomeAuto kiosk Pi.
 # Started by homeauto-rpiplay.service (dashboard "Screen Mirroring" button); the service stops the kiosk browser
 # while this runs and starts it again when it ends.
-# Uses RPiPlay (built by install.sh); falls back to UxPlay (same AirPlay protocol) when RPiPlay isn't available
-# or can't run. Output goes to the journal: journalctl --user -u homeauto-rpiplay
+# Prefers UxPlay (maintained, GStreamer based, works on current Pi OS); falls back to RPiPlay, which only runs on
+# the old Pi graphics stack. Output goes to the journal: journalctl --user -u homeauto-rpiplay
 # ==========================================================
 
 NAME="${HOMEAUTO_AIRPLAY_NAME:-HomeAuto}"
@@ -20,29 +20,30 @@ export PATH="/usr/local/bin:$PATH"
 
 echo "Session: DISPLAY=$DISPLAY WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-none} XDG_RUNTIME_DIR=$XDG_RUNTIME_DIR"
 
+if command -v uxplay >/dev/null 2>&1; then
+  # Fullscreen video; the sink is picked by GStreamer (waylandsink / kmssink / ximagesink) unless HOMEAUTO_UXPLAY_ARGS is set
+  # in ~/homeauto/.kiosk_env, e.g.  export HOMEAUTO_UXPLAY_ARGS="-vs kmssink -as alsasink"
+  KIOSK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  # shellcheck source=/dev/null
+  [ -f "$KIOSK_DIR/.kiosk_env" ] && . "$KIOSK_DIR/.kiosk_env"
+  # shellcheck disable=SC2086
+  echo "Starting: uxplay -n $NAME -fs ${HOMEAUTO_UXPLAY_ARGS:-}"
+  # shellcheck disable=SC2086
+  exec uxplay -n "$NAME" -fs ${HOMEAUTO_UXPLAY_ARGS:-}
+fi
+
 if command -v rpiplay >/dev/null 2>&1; then
   ARGS=(-n "$NAME")
-  # RPiPlay's default video/audio output is OpenMAX (old Pi graphics stack). Without it (Pi OS Bookworm, Pi 4/5)
-  # use the GStreamer / ALSA renderers, if this build has them.
+  # RPiPlay's default video/audio output is OpenMAX (old Pi graphics stack). Without it use the GStreamer / ALSA
+  # renderers, if this build has them.
   if [ ! -e /opt/vc/lib/libopenmaxil.so ]; then
     HELP="$(rpiplay -h 2>&1)"
     echo "$HELP" | grep -q -- "-vr" && ARGS+=(-vr gstreamer)
     echo "$HELP" | grep -q -- "-ar" && ARGS+=(-ar alsa)
   fi
   echo "Starting: rpiplay ${ARGS[*]}"
-  rpiplay "${ARGS[@]}"
-  rc=$?
-  echo "rpiplay exited with code $rc"
-  # Failed to run: try UxPlay instead
-  if ! command -v uxplay >/dev/null 2>&1; then
-    exit "$rc"
-  fi
+  exec rpiplay "${ARGS[@]}" 2>&1
 fi
 
-if command -v uxplay >/dev/null 2>&1; then
-  echo "Starting: uxplay -n $NAME"
-  exec uxplay -n "$NAME"
-fi
-
-echo "Error: neither rpiplay nor uxplay is installed. Run ./install.sh --kiosk again." >&2
+echo "Error: neither uxplay nor rpiplay is installed. Run: sudo apt install uxplay" >&2
 exit 1
