@@ -9,6 +9,7 @@ import logging
 import re
 import shutil
 import subprocess
+import time
 from typing import Any, Dict, List, Optional, Tuple
 
 logger = logging.getLogger("HomeAuto.PiControl")
@@ -194,11 +195,25 @@ def rpiplay_start() -> Dict[str, Any]:
     status = rpiplay_status()
     if not status["installed"] or not status["configured"]:
         return _result(False, "RPiPlay is not set up on this Pi. Run ./install.sh --kiosk again to install it.", **status)
+    _systemctl_user("reset-failed", RPIPLAY_SERVICE)
     rc, _, err = _systemctl_user("start", RPIPLAY_SERVICE)
     if rc != 0:
-        return _result(False, err or "Could not start RPiPlay", **status)
+        return _result(False, f"Could not start RPiPlay: {err or _rpiplay_log()}", **status)
+    # "start" returns as soon as the process is spawned: wait a moment to see whether the receiver actually stays up
+    time.sleep(3)
+    _, out, _ = _systemctl_user("is-active", RPIPLAY_SERVICE)
+    if out.strip() != "active":
+        log = _rpiplay_log()
+        logger.warning(f"RPiPlay exited right after starting: {log}")
+        return _result(False, f"RPiPlay stopped right after starting. {log}", **{**status, "active": False})
     _run(["pkill", "-f", "chrom.*--kiosk"])  # a kiosk started by the desktop autostart instead of the service
     return _result(True, "Screen mirroring is ready. On the iPhone/iPad/Mac pick 'HomeAuto' in Screen Mirroring.", **{**status, "active": True})
+
+
+def _rpiplay_log(lines: int = 6) -> str:
+    """Last lines the mirroring service wrote to the journal, to show why it failed."""
+    rc, out, _ = _run(["journalctl", "--user", "-u", RPIPLAY_SERVICE, "-n", str(lines), "--no-pager", "-o", "cat"])
+    return " | ".join(l.strip() for l in out.splitlines() if l.strip())[-400:] if rc == 0 and out else "No log output (check: journalctl --user -u homeauto-rpiplay)"
 
 
 def rpiplay_stop() -> Dict[str, Any]:
