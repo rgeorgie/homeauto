@@ -7,6 +7,7 @@ These run real system commands, so main.py only exposes them to requests coming 
 """
 import logging
 import re
+import shutil
 import subprocess
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -14,6 +15,7 @@ logger = logging.getLogger("HomeAuto.PiControl")
 
 KIOSK_SERVICE = "homeauto-kiosk.service"
 APP_SERVICE = "homeauto.service"
+RPIPLAY_SERVICE = "homeauto-rpiplay.service"  # installed by install.sh; Conflicts= with the kiosk, restarts it when it stops
 RETURN_UNIT = "homeauto-kiosk-return"  # transient timer that brings the kiosk back after "open desktop"
 MAX_DESKTOP_MINUTES = 240
 
@@ -171,6 +173,40 @@ def restart_app() -> Dict[str, Any]:
     """Restarts HomeAuto itself. Done from a separate transient unit, otherwise the restart would kill its own command."""
     rc, _, err = _run(["systemd-run", "--user", "--on-active=2s", "systemctl", "--user", "restart", APP_SERVICE])
     return _result(rc == 0, "HomeAuto is restarting..." if rc == 0 else (err or "Could not schedule the restart"))
+
+
+# ----------------------------- Screen mirroring (RPiPlay / AirPlay) -----------------------------
+
+def rpiplay_status() -> Dict[str, Any]:
+    # install.sh builds RPiPlay, or falls back to UxPlay (same AirPlay protocol) where RPiPlay can't run (Pi OS Bookworm)
+    installed = any(shutil.which(b) or shutil.which(b, path="/usr/local/bin") for b in ("rpiplay", "uxplay"))
+    rc, _, _ = _systemctl_user("cat", RPIPLAY_SERVICE)
+    configured = rc == 0
+    active = False
+    if configured:
+        _, out, _ = _systemctl_user("is-active", RPIPLAY_SERVICE)
+        active = out.strip() == "active"
+    return {"installed": installed, "configured": configured, "active": active}
+
+
+def rpiplay_start() -> Dict[str, Any]:
+    """Starts the RPiPlay service. The service Conflicts= with the kiosk, so systemd closes the browser to show the mirrored screen."""
+    status = rpiplay_status()
+    if not status["installed"] or not status["configured"]:
+        return _result(False, "RPiPlay is not set up on this Pi. Run ./install.sh --kiosk again to install it.", **status)
+    rc, _, err = _systemctl_user("start", RPIPLAY_SERVICE)
+    if rc != 0:
+        return _result(False, err or "Could not start RPiPlay", **status)
+    _run(["pkill", "-f", "chrom.*--kiosk"])  # a kiosk started by the desktop autostart instead of the service
+    return _result(True, "Screen mirroring is ready. On the iPhone/iPad/Mac pick 'HomeAuto' in Screen Mirroring.", **{**status, "active": True})
+
+
+def rpiplay_stop() -> Dict[str, Any]:
+    """Stops RPiPlay; its unit then starts the kiosk again (ExecStopPost)."""
+    rc, _, err = _systemctl_user("stop", RPIPLAY_SERVICE)
+    if rc == 0:
+        _systemctl_user("start", "--no-block", KIOSK_SERVICE)  # in case the kiosk was started outside the service
+    return _result(rc == 0, "Mirroring stopped" if rc == 0 else (err or "Could not stop RPiPlay"), **rpiplay_status())
 
 
 # ----------------------------- Power -----------------------------

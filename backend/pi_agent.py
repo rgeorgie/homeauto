@@ -1,13 +1,14 @@
 """
-Pi-side Bluetooth agent for kiosk-only installs.
+Pi-side agent for kiosk-only installs.
 
 When the Pi only runs the Chromium kiosk and the HomeAuto server lives elsewhere (LXC, VM, ...),
-the server cannot scan/pair the Pi's Bluetooth adapter or route the Pi's audio. This small service runs
-on the Pi, listens on 127.0.0.1 only and exposes the same /api/bluetooth/* endpoints as the server.
-The web UI detects it (see frontend/js/bt_audio.js) and talks to it instead of the server.
+the server cannot scan/pair the Pi's Bluetooth adapter, route the Pi's audio or start screen mirroring (RPiPlay).
+This small service runs on the Pi, listens on 127.0.0.1 only and exposes the same /api/bluetooth/* and
+/api/pi/rpiplay* endpoints as the server. The web UI detects it (see frontend/js/bt_audio.js) and talks to it instead.
 
 Run: python -m backend.pi_agent   (needs only fastapi, uvicorn, pydantic, pyyaml)
 """
+import asyncio
 import json
 import logging
 import os
@@ -18,6 +19,7 @@ from typing import Dict
 import uvicorn
 from fastapi import Body, FastAPI, HTTPException, Request, Response
 
+from backend import pi_control
 from backend.bt_audio_manager import BluetoothAudioManager
 from backend.config import BluetoothAudioConfig
 
@@ -121,6 +123,21 @@ async def test_bluetooth_sound():
         await bt_mgr.switch_to_bluetooth_sink(bt_mgr.config.target_mac)
     res = await bt_mgr.play_test_tone()
     return {"status": "ok" if res.get("success") else "failed", **res}
+
+
+@app.get("/api/pi/rpiplay")
+async def rpiplay_status():
+    return await asyncio.get_running_loop().run_in_executor(None, pi_control.rpiplay_status)
+
+
+@app.post("/api/pi/rpiplay/start")
+async def rpiplay_start():
+    return await asyncio.get_running_loop().run_in_executor(None, pi_control.rpiplay_start)
+
+
+@app.post("/api/pi/rpiplay/stop")
+async def rpiplay_stop():
+    return await asyncio.get_running_loop().run_in_executor(None, pi_control.rpiplay_stop)
 
 
 if __name__ == "__main__":

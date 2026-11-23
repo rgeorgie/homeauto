@@ -221,6 +221,14 @@ The platform includes a dedicated [`kiosk.sh`](kiosk.sh:1) launcher compatible w
    systemctl --user restart homeauto-kiosk.service
    ```
 
+### 📲 Screen Mirroring (AirPlay / RPiPlay)
+
+`./install.sh --kiosk` (and `--all`) also installs an AirPlay receiver ([RPiPlay](https://github.com/FD-/RPiPlay), with [UxPlay](https://github.com/FDH2/UxPlay) as fallback) and the `homeauto-rpiplay.service` user service. The dashboard has a **📲 Screen Mirroring** button (shown on the Pi's own screen only):
+
+1. Tap the button. The kiosk browser closes and the Pi waits for a connection as **HomeAuto** (override the name with `HOMEAUTO_AIRPLAY_NAME`, see [`rpiplay.sh`](rpiplay.sh:1)).
+2. On the iPhone / iPad / Mac open *Screen Mirroring* and pick **HomeAuto**.
+3. The dashboard returns by itself after 30 minutes (`RuntimeMaxSec` in the service), or immediately with `systemctl --user stop homeauto-rpiplay.service` (e.g. over SSH).
+
 ---
 
 ## 📁 Project Architecture

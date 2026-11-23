@@ -766,6 +766,18 @@ async def pi_open_desktop(request: Request, payload: Dict[str, Any] = Body(defau
 async def pi_return_dashboard(request: Request):
     return await _pi(request, pi_control.return_to_dashboard)
 
+@app.get("/api/pi/rpiplay")
+async def pi_rpiplay_status(request: Request):
+    return await _pi(request, pi_control.rpiplay_status)
+
+@app.post("/api/pi/rpiplay/start")
+async def pi_rpiplay_start(request: Request):
+    return await _pi(request, pi_control.rpiplay_start)
+
+@app.post("/api/pi/rpiplay/stop")
+async def pi_rpiplay_stop(request: Request):
+    return await _pi(request, pi_control.rpiplay_stop)
+
 @app.post("/api/pi/restart-kiosk")
 async def pi_restart_kiosk(request: Request):
     return await _pi(request, pi_control.restart_kiosk)

@@ -182,6 +182,64 @@ EOF
   fi
 }
 
+setup_rpiplay() {
+  # AirPlay screen mirroring (RPiPlay) for the dashboard's "Screen Mirroring" button
+  echo "==> Setting up AirPlay screen mirroring (RPiPlay)..."
+  chmod +x "$CURRENT_DIR/rpiplay.sh"
+
+  if ! command -v rpiplay >/dev/null 2>&1 && [ ! -x /usr/local/bin/rpiplay ] && ! command -v uxplay >/dev/null 2>&1; then
+    # mDNS responder (the device is found through Bonjour) + GStreamer for video/audio output
+    $SUDO apt-get install -y avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad \
+      gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl || true
+    $SUDO systemctl enable --now avahi-daemon 2>/dev/null || true
+
+    # Build RPiPlay from source (not packaged in Raspberry Pi OS)
+    if $SUDO apt-get install -y build-essential cmake git libavahi-compat-libdnssd-dev libplist-dev libssl-dev \
+         libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev; then
+      local build_dir
+      build_dir="$(mktemp -d)"
+      if git clone --depth 1 https://github.com/FD-/RPiPlay.git "$build_dir/RPiPlay" \
+         && (cd "$build_dir/RPiPlay" && mkdir build && cd build && cmake .. && make -j2 && $SUDO make install); then
+        echo "==> RPiPlay built and installed."
+      else
+        echo "==> RPiPlay build failed, trying UxPlay (same AirPlay protocol) from the package manager..."
+        $SUDO apt-get install -y uxplay || echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
+      fi
+      rm -rf "$build_dir"
+    else
+      $SUDO apt-get install -y uxplay || echo "WARNING: no AirPlay receiver could be installed; the Screen Mirroring button will not work."
+    fi
+  fi
+
+  if [ "$EUID" -ne 0 ]; then
+    USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
+    mkdir -p "$USER_SYSTEMD_DIR"
+    # Conflicts= makes systemd close the kiosk browser while mirroring runs (so the mirrored screen is visible),
+    # and ExecStopPost brings the kiosk back when mirroring ends.
+    cat > "$USER_SYSTEMD_DIR/homeauto-rpiplay.service" <<EOF
+[Unit]
+Description=HomeAuto AirPlay screen mirroring (RPiPlay)
+After=network-online.target avahi-daemon.service
+Conflicts=homeauto-kiosk.service
+
+[Service]
+Type=simple
+WorkingDirectory=${CURRENT_DIR}
+Environment=DISPLAY=:0
+Environment=WAYLAND_DISPLAY=wayland-0
+ExecStart=${CURRENT_DIR}/rpiplay.sh
+ExecStopPost=/usr/bin/systemctl --user start --no-block homeauto-kiosk.service
+# The browser is closed while this runs and the screen can't be touched, so always hand the screen back after 30 min
+RuntimeMaxSec=1800
+Restart=no
+TimeoutStopSec=5
+KillMode=control-group
+EOF
+    systemctl --user daemon-reload
+    echo "==> User systemd service 'homeauto-rpiplay.service' installed (started by the dashboard button)."
+  fi
+}
+
 setup_kiosk_service() {
   local server_url="$1"
   echo "==> Setting up Chromium Touchscreen Kiosk..."
@@ -266,6 +324,7 @@ EOF
     systemctl --user enable --now homeauto-kiosk-restart.timer 2>/dev/null || true
   fi
 
+  setup_rpiplay || echo "WARNING: screen mirroring setup failed; continuing without it."
   setup_zram_swap
 }
 
