@@ -66,6 +66,23 @@ A complete, modern, touchscreen-optimized Home Automation Hub built for **Raspbe
 | **Bluetooth Audio** | Any Bluetooth soundbar, surround sound system, or wireless speaker |
 | **Power Supply** | Official 15W/27W USB-C Raspberry Pi Power Supply |
 
+### Which Raspberry Pi models work?
+
+The kiosk runs full Chromium (`--kiosk`) and the UI uses SVG/canvas (floor plan, energy charts) plus a screensaver, so it needs a reasonably capable board.
+
+| Board | CPU / RAM | Suitability |
+| :--- | :--- | :--- |
+| Pi Zero / Zero W | 1 core ARMv6, 512 MB | ❌ Not supported (no usable Chromium for ARMv6, far too slow) |
+| Pi Zero 2 W | 4× Cortex-A53, 512 MB | ⚠️ Marginal, **remote kiosk only** (option 2 in the installer) |
+| Pi 3 / 3B+ | 4× Cortex-A53, 1 GB | ✅ Remote kiosk; All-in-One is possible but slow |
+| Pi 4 / Pi 5 | 2–8 GB | ✅ Recommended for Remote kiosk and All-in-One |
+
+**Tips for low-memory boards (Pi Zero 2 W / Pi 3):**
+- Run only the kiosk on the Pi and host the backend elsewhere (LXC, VM, Docker or another Pi): `./install.sh --kiosk http://<server-ip>:80`.
+- Use Raspberry Pi OS **Lite** with a minimal compositor instead of the full desktop, to save RAM.
+- Increase swap or enable zram.
+- Don't run the backend, Bluetooth audio or AirPlay mirroring on the same board.
+
 ---
 
 ## 🚀 Interactive Installation (LXC, Raspberry Pi, Debian / Ubuntu)
