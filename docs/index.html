@@ -107,6 +107,8 @@
         <strong>📱 15" Touchscreen Optimized Interface</strong>
         <ul>
           <li>Sleek dark OLED/glassmorphism UI with large touch targets.</li>
+          <li>Responsive layout: adapts from the 15" kiosk down to tablets and phones.</li>
+          <li><strong>Floor plan</strong> on the dashboard: tap it (or a room) to open it full screen; labels and device chips scale with the plan. Close with the ✕ button or <code>Esc</code>.</li>
           <li>Works in full-screen <strong>Chromium Kiosk Mode</strong> on the 15" touchscreen display.</li>
           <li>Real-time reactive state updates over WebSockets (instant sync between touchscreen and phone/laptop browsers).</li>
         </ul>
@@ -132,7 +134,7 @@
           <li><strong>Live Hot-Reload</strong>: Save changes directly to <code>config.yaml</code> with automatic hot-reloading of all backend workers without restarting the service.</li>
         </ul>
       </li>
-      <li value="5">
+      <li>
         <strong>🎬 Kodi Integration for TV &amp; Movies</strong>
         <ul>
           <li>One-touch launcher to start Kodi on your display.</li>
@@ -140,7 +142,7 @@
           <li>Full touch D-Pad remote control (Up, Down, Left, Right, OK, Back, Home, Menu).</li>
         </ul>
       </li>
-      <li value="5">
+      <li>
         <strong>🔊 Bluetooth Surround Sound Audio Routing</strong>
         <ul>
           <li>Auto-reconnect supervisor for your Bluetooth soundbar or surround speaker setup.</li>
@@ -148,10 +150,24 @@
           <li>Device scanning and pairing interface.</li>
         </ul>
       </li>
-      <li value="6">
+      <li>
+        <strong>📲 AirPlay Screen Mirroring</strong>
+        <ul>
+          <li><strong>📲 Screen Mirroring</strong> button on the dashboard (Pi's own screen only) turns the Pi into an AirPlay receiver for iPhone / iPad / Mac. See <a href="#screen-mirroring">Screen Mirroring</a>.</li>
+        </ul>
+      </li>
+      <li>
         <strong>⚙️ Hardware Telemetry</strong>
         <ul>
           <li>Live monitoring of Raspberry Pi CPU usage, CPU Temperature (<code>vcgencmd</code>), RAM utilization, and IP address.</li>
+        </ul>
+      </li>
+      <li>
+        <strong>⚡ Energy Monitoring</strong>
+        <ul>
+          <li>Plugs/sockets with energy monitoring report live watts, volts, amps and total kWh (shown on their card, the dashboard "Power now" tile and per room on the floor plan).</li>
+          <li>The server keeps a history (<code>data/energy.db</code>) and the <strong>Energy</strong> view charts usage per day/week/month/year with a per-device breakdown.</li>
+          <li>Set your price per kWh under <strong>Admin → Energy</strong> to see the cost. Plugs without a meter report nothing.</li>
         </ul>
       </li>
     </ol>
@@ -194,6 +210,29 @@
         <tr><td><strong>Power Supply</strong></td><td>Official 15W/27W USB-C Raspberry Pi Power Supply</td></tr>
       </tbody>
     </table>
+
+    <h3>Which Raspberry Pi models work?</h3>
+    <p>The kiosk runs full Chromium (<code>--kiosk</code>) and the UI uses SVG/canvas (floor plan, energy charts) plus a screensaver, so it needs a reasonably capable board.</p>
+
+    <table>
+      <thead>
+        <tr><th>Board</th><th>CPU / RAM</th><th>Suitability</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Pi Zero / Zero W</td><td>1 core ARMv6, 512 MB</td><td>Not supported (no usable Chromium for ARMv6, far too slow)</td></tr>
+        <tr><td>Pi Zero 2 W</td><td>4&times; Cortex-A53, 512 MB</td><td>Marginal, <strong>remote kiosk only</strong> (option 2 in the installer)</td></tr>
+        <tr><td>Pi 3 / 3B+</td><td>4&times; Cortex-A53, 1 GB</td><td>Remote kiosk; All-in-One is possible but slow</td></tr>
+        <tr><td>Pi 4 / Pi 5</td><td>2&ndash;8 GB</td><td>Recommended for Remote kiosk and All-in-One</td></tr>
+      </tbody>
+    </table>
+
+    <p><strong>Tips for low-memory boards (Pi Zero 2 W / Pi 3):</strong></p>
+    <ul>
+      <li>Run only the kiosk on the Pi and host the backend elsewhere (LXC, VM, Docker or another Pi): <code>./install.sh --kiosk http://&lt;server-ip&gt;:80</code>.</li>
+      <li>Use Raspberry Pi OS <strong>Lite</strong> with a minimal compositor instead of the full desktop, to save RAM.</li>
+      <li>Increase swap or enable zram.</li>
+      <li>Don't run the backend, Bluetooth audio or AirPlay mirroring on the same board.</li>
+    </ul>
 
     <hr>
 
@@ -336,10 +375,47 @@ systemctl --user restart homeauto-kiosk.service</code></pre>
 
     <hr>
 
+    <h2 id="screen-mirroring">📲 Screen Mirroring (AirPlay / UxPlay)</h2>
+    <p><code>./install.sh --kiosk</code> (and <code>--all</code>) installs an AirPlay receiver and the <code>homeauto-rpiplay.service</code> user service. The receiver is <a href="https://github.com/FDH2/UxPlay">UxPlay</a> (works on current Raspberry Pi OS); the original <a href="https://github.com/FD-/RPiPlay">RPiPlay</a> is only built from source as a fallback when the <code>uxplay</code> package isn't available, and it only runs on the old Pi graphics stack.</p>
+    <p>The dashboard shows a <strong>📲 Screen Mirroring</strong> button on the Pi's own screen only (hidden when the dashboard is opened from another device):</p>
+    <ol>
+      <li>Tap the button. The kiosk browser closes and the Pi waits for a connection as <strong>HomeAuto</strong> (override the name with <code>HOMEAUTO_AIRPLAY_NAME</code>).</li>
+      <li>On the iPhone / iPad / Mac open <em>Screen Mirroring</em> and pick <strong>HomeAuto</strong>. The device must be on the same network as the Pi.</li>
+      <li>A red <strong>✕ Exit mirroring</strong> button floats in the top-right corner of the screen. Tap it to stop mirroring and bring the dashboard back.</li>
+      <li>Without tapping, the dashboard returns by itself after 30 minutes (<code>RuntimeMaxSec</code> in the service), or immediately with <code>systemctl --user stop homeauto-rpiplay.service</code> (e.g. over SSH).</li>
+    </ol>
+    <p>On a kiosk-only install the button talks to the Pi agent (<code>homeauto-agent</code>, port 8765). After updating, restart it: <code>systemctl --user restart homeauto-agent</code>.</p>
+
+    <h3>Manual install / update on the Pi</h3>
+<pre><code>git pull
+sudo apt install -y uxplay avahi-daemon gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+  gstreamer1.0-plugins-bad gstreamer1.0-libav gstreamer1.0-alsa gstreamer1.0-gl gstreamer1.0-x \
+  python3-gi gir1.2-gtk-3.0 gir1.2-gtklayershell-0.1 libgtk-layer-shell0   # last 4: the Exit button</code></pre>
+
+    <h3>Settings</h3>
+    <p>Extra UxPlay options go into <code>~/homeauto/.kiosk_env</code>, for example to force the video and audio output:</p>
+<pre><code>export HOMEAUTO_UXPLAY_ARGS="-vs kmssink -as alsasink"</code></pre>
+
+    <h3>Troubleshooting</h3>
+<pre><code>systemctl --user status homeauto-rpiplay
+journalctl --user -u homeauto-rpiplay -n 30 --no-pager</code></pre>
+    <ul>
+      <li><strong>Button says it stopped right after starting</strong>: the message contains the last log lines. <code>rpiplay</code> exiting immediately means RPiPlay can't run on this Pi OS: install <code>uxplay</code>.</li>
+      <li><strong>"HomeAuto" doesn't show up on the iPhone / Mac</strong>: check <code>systemctl status avahi-daemon</code>, that both devices are on the same subnet (no guest Wi-Fi / client isolation) and that the firewall allows mDNS (UDP 5353).</li>
+      <li><strong>Black screen or no sound</strong>: try another sink through <code>HOMEAUTO_UXPLAY_ARGS</code> (<code>-vs waylandsink</code>, <code>-vs kmssink</code>, <code>-as alsasink</code>).</li>
+      <li><strong>No Exit button</strong>: look for <code>mirroring_exit: GTK not available</code> in the journal and install the GTK packages above. Without <code>gir1.2-gtklayershell-0.1</code> the button can end up under the video on Wayland.</li>
+      <li><strong>Button gives a 404 / "agent is outdated"</strong>: <code>systemctl --user restart homeauto-agent</code>.</li>
+    </ul>
+
+    <hr>
+
     <h2>📁 Project Architecture</h2>
 <pre><code>homeauto/
 ├── config.example.yaml        # Full configuration template
 ├── install.sh                 # Raspberry Pi OS auto-installer
+├── kiosk.sh                   # Chromium kiosk launcher
+├── rpiplay.sh                 # AirPlay receiver launcher (UxPlay / RPiPlay)
+├── mirroring_exit.py          # On-screen "Exit mirroring" button (GTK)
 ├── requirements.txt           # Python dependencies
 ├── backend/
 │   ├── main.py                # FastAPI server &amp; WebSocket hub
@@ -349,17 +425,21 @@ systemctl --user restart homeauto-kiosk.service</code></pre>
 │   ├── kodi_manager.py        # Kodi JSON-RPC API client &amp; launcher
 │   ├── media_player.py        # YouTube / Ambient audio stream manager (yt-dlp/mpv)
 │   ├── screensaver_manager.py # Photo slideshow &amp; ambient data manager
-│   └── system_manager.py      # Pi telemetry (CPU, Temp, Memory, Screen power)
+│   ├── system_manager.py      # Pi telemetry (CPU, Temp, Memory, Screen power)
+│   ├── pi_control.py          # Pi controls: Wi-Fi, Bluetooth power, desktop, power, screen mirroring
+│   └── pi_agent.py            # Pi-side agent (127.0.0.1:8765) for kiosk-only installs
 ├── frontend/
 │   ├── index.html             # Touchscreen Dashboard &amp; Web App
 │   ├── css/
-│   │   └── style.css          # Touch-optimized dark glassmorphism theme
+│   │   └── style.css          # Touch-optimized dark glassmorphism theme, responsive rules
 │   └── js/
 │       ├── app.js             # Core UI, router, WebSockets &amp; clock
 │       ├── tuya_cards.js      # Device widgets &amp; controls
+│       ├── floorplan.js       # Floor plan editor &amp; dashboard plan (full screen)
 │       ├── screensaver.js     # Screensaver engine &amp; YouTube audio controls
 │       ├── kodi.js            # Kodi launcher &amp; remote D-Pad
-│       └── bt_audio.js        # Bluetooth sound selector &amp; volume
+│       ├── bt_audio.js        # Bluetooth sound selector &amp; volume
+│       └── mirroring.js       # Screen Mirroring dashboard button
 └── systemd/
     ├── homeauto.service       # Backend hub systemd service
     └── homeauto-kiosk.service # Touchscreen Kiosk systemd service</code></pre>
