@@ -11,6 +11,14 @@ fi
 if [ -z "$WAYLAND_DISPLAY" ] && [ -e "$XDG_RUNTIME_DIR/wayland-0" ]; then
   export WAYLAND_DISPLAY="wayland-0"
 fi
+# The systemd unit always sets WAYLAND_DISPLAY; on an X11 session (e.g. Ubuntu x86) the socket doesn't exist
+if [ -n "$WAYLAND_DISPLAY" ] && [ ! -e "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY" ]; then
+  unset WAYLAND_DISPLAY
+fi
+# X11 under a systemd user service needs the session's Xauthority (GDM on Ubuntu keeps it here)
+if [ -z "$XAUTHORITY" ] && [ -f "$XDG_RUNTIME_DIR/gdm/Xauthority" ]; then
+  export XAUTHORITY="$XDG_RUNTIME_DIR/gdm/Xauthority"
+fi
 
 # Detect Chromium binary on Raspberry Pi OS
 if command -v chromium-browser >/dev/null 2>&1; then
@@ -26,11 +34,13 @@ fi
 trap 'kill $(jobs -p) 2>/dev/null || true; exit 0' SIGTERM SIGINT EXIT
 
 # Prevent Chromium session restore prompt hanging on unclean shutdown
-PREFS_FILE="$HOME/.config/chromium/Default/Preferences"
-if [ -f "$PREFS_FILE" ]; then
-  sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PREFS_FILE" 2>/dev/null || true
-  sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS_FILE" 2>/dev/null || true
-fi
+# (apt/Raspberry Pi OS profile, and the snap profile used by Ubuntu's chromium)
+for PREFS_FILE in "$HOME/.config/chromium/Default/Preferences" "$HOME/snap/chromium/common/chromium/Default/Preferences"; do
+  if [ -f "$PREFS_FILE" ]; then
+    sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$PREFS_FILE" 2>/dev/null || true
+    sed -i 's/"exited_cleanly":false/"exited_cleanly":true/' "$PREFS_FILE" 2>/dev/null || true
+  fi
+done
 
 # HomeAuto server URL: configurable via HOMEAUTO_SERVER env var or 1st arg (e.g. http://192.168.1.100:80)
 # Defaults to local server port from config.yaml (default 80)
@@ -41,6 +51,18 @@ if [ -f "$KIOSK_DIR/.kiosk_env" ]; then
   . "$KIOSK_DIR/.kiosk_env"
 fi
 CUSTOM_SERVER="${HOMEAUTO_SERVER:-$1}"
+
+# Platform tuning. The GPU flags and small JS heap suit a Raspberry Pi (ARM); on x86 (e.g. Fujitsu FUTRO)
+# they are off by default. Override in .kiosk_env, e.g.:
+#   export HOMEAUTO_GPU_FLAGS="--enable-gpu-rasterization --ignore-gpu-blocklist"
+#   export HOMEAUTO_JS_HEAP_MB=384
+#   export HOMEAUTO_CHROMIUM_ARGS="--disable-gpu"
+case "$(uname -m)" in
+  arm*|aarch64) DEFAULT_GPU_FLAGS="--enable-gpu-rasterization --ignore-gpu-blocklist"; DEFAULT_HEAP=192 ;;
+  *)            DEFAULT_GPU_FLAGS="";                                                  DEFAULT_HEAP=384 ;;
+esac
+GPU_FLAGS="${HOMEAUTO_GPU_FLAGS-$DEFAULT_GPU_FLAGS}"
+JS_HEAP_MB="${HOMEAUTO_JS_HEAP_MB:-$DEFAULT_HEAP}"
 
 if [ -n "$CUSTOM_SERVER" ]; then
   BASE_URL="${CUSTOM_SERVER%/}"
@@ -91,16 +113,16 @@ exec $CHROMIUM_BIN \
   --overscroll-history-navigation=0 \
   --touch-events=enabled \
   --disable-dev-shm-usage \
-  --enable-gpu-rasterization \
-  --ignore-gpu-blocklist \
+  $GPU_FLAGS \
   --renderer-process-limit=1 \
   --disable-sync \
   --disable-extensions \
   --no-first-run \
-  --js-flags="--max-old-space-size=192" \
+  --js-flags="--max-old-space-size=${JS_HEAP_MB}" \
   --disk-cache-size=1 \
   --media-cache-size=1 \
   --enable-features=OverlayScrollbar,TouchEvents \
   --ozone-platform-hint=auto \
   --log-level=3 \
+  $HOMEAUTO_CHROMIUM_ARGS \
   --app="${BASE_URL}/?kiosk=1"

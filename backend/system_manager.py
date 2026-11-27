@@ -73,15 +73,19 @@ class SystemManager:
 
     @staticmethod
     def set_display_power(turn_on: bool) -> bool:
-        """Controls HDMI / DSI Touchscreen power state."""
+        """Controls monitor power state: Raspberry Pi (vcgencmd) and/or X11 DPMS (x86 PCs, thin clients)."""
         val = "1" if turn_on else "0"
-        try:
-            # Try vcgencmd display_power (Raspberry Pi HDMI/Touchscreen)
-            subprocess.run(["vcgencmd", "display_power", val], capture_output=True, timeout=2)
-            # Try xset dpms
-            dpms_arg = "on" if turn_on else "off"
-            subprocess.run(["xset", "dpms", "force", dpms_arg], capture_output=True, timeout=2)
-            return True
-        except Exception as e:
-            logger.error(f"Error toggling display power: {e}")
-            return False
+        dpms_arg = "on" if turn_on else "off"
+        env = dict(os.environ)
+        env.setdefault("DISPLAY", ":0")
+        ok = False
+        # Each tool may be missing on this hardware (e.g. vcgencmd on x86), so try them independently
+        for cmd in (["vcgencmd", "display_power", val], ["xset", "dpms", "force", dpms_arg]):
+            try:
+                res = subprocess.run(cmd, capture_output=True, timeout=2, env=env)
+                ok = ok or res.returncode == 0
+            except FileNotFoundError:
+                continue
+            except Exception as e:
+                logger.error(f"Error toggling display power with {cmd[0]}: {e}")
+        return ok

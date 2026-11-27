@@ -250,6 +250,13 @@ setup_kiosk_service() {
   local server_url="$1"
   echo "==> Setting up Chromium Touchscreen Kiosk..."
 
+  # Memory cap for the browser: tight on a Pi, more room on x86 (Ubuntu's snap Chromium needs more)
+  local mem_high="450M" mem_max="550M"
+  case "$(uname -m)" in
+    arm*|aarch64) ;;
+    *) mem_high="900M"; mem_max="1100M" ;;
+  esac
+
   chmod +x "$CURRENT_DIR/kiosk.sh"
 
   # Save persistent server URL if provided
@@ -297,8 +304,8 @@ KillMode=control-group
 KillSignal=SIGTERM
 SendSIGKILL=yes
 FinalKillSignal=SIGKILL
-MemoryHigh=450M
-MemoryMax=550M
+MemoryHigh=${mem_high}
+MemoryMax=${mem_max}
 
 [Install]
 WantedBy=default.target
@@ -407,6 +414,9 @@ run_scenario_kiosk_only() {
     unclutter \
     curl \
     git || $SUDO apt-get install -y chromium xdotool unclutter curl git
+
+  # xset (DPMS screen on/off + blanking) for x86 PCs / thin clients; harmless on a Pi
+  $SUDO apt-get install -y x11-xserver-utils || true
 
   # Bluetooth audio packages for the local speaker on the Pi
   $SUDO apt-get install -y python3-venv bluez libspa-0.2-bluetooth pulseaudio-utils || true

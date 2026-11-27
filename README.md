@@ -83,6 +83,19 @@ The kiosk runs full Chromium (`--kiosk`) and the UI uses SVG/canvas (floor plan,
 - Increase swap or enable zram.
 - Don't run the backend, Bluetooth audio or AirPlay mirroring on the same board.
 
+### x86 thin clients / mini PCs (e.g. Fujitsu FUTRO S720, Ubuntu 24.04)
+
+Use the **Remote kiosk** (`./install.sh --kiosk http://<server-ip>:80`) and host the backend elsewhere. Notes:
+- Log into an **X11 session** (e.g. Openbox/LXQt, or "Ubuntu on Xorg") so screen blanking (`xset`), cursor hiding (`unclutter`) and the dashboard's screen on/off use DPMS. Pi-only `vcgencmd` is skipped automatically.
+- On x86 the Pi GPU flags are off and the JS heap / systemd memory cap are higher. Tune in `~/homeauto/.kiosk_env`:
+  ```bash
+  export HOMEAUTO_GPU_FLAGS="--enable-gpu-rasterization --ignore-gpu-blocklist"  # GPU flags (default: none on x86)
+  export HOMEAUTO_JS_HEAP_MB=384                                                  # V8 heap limit
+  export HOMEAUTO_CHROMIUM_ARGS="--disable-gpu"                                   # any extra flags, e.g. if the display flickers
+  ```
+- Ubuntu's `chromium-browser` is a **snap**; the launcher also cleans its profile (`~/snap/chromium/common/chromium`). A non-snap Chromium or Firefox starts faster on an old CPU.
+- No built-in Bluetooth on the S720: use a USB dongle for the Bluetooth speaker feature. AirPlay mirroring is not recommended on this CPU.
+
 ---
 
 ## 🚀 Interactive Installation (LXC, Raspberry Pi, Debian / Ubuntu)
